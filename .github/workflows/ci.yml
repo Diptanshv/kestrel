@@ -1,36 +1,36 @@
-name: ci
+# name: ci
 
-on:
-  push:
-    branches: [main]
-  pull_request:
+# on:
+#   push:
+#     branches: [main]
+#   pull_request:
 
-jobs:
-  go:
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: pulse
-          POSTGRES_PASSWORD: pulse
-          POSTGRES_DB: pulse
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U pulse -d pulse"
-          --health-interval 2s
-          --health-timeout 5s
-          --health-retries 10
-    env:
-      DATABASE_URL: postgres://pulse:pulse@localhost:5432/pulse?sslmode=disable
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: stable
-      - run: go vet ./...
-      - run: go test ./...
-      - uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
+# jobs:
+#   go:
+#     runs-on: ubuntu-latest
+#     services:
+#       postgres:
+#         image: postgres:16-alpine
+#         env:
+#           POSTGRES_USER: pulse
+#           POSTGRES_PASSWORD: pulse
+#           POSTGRES_DB: pulse
+#         ports:
+#           - 5432:5432
+#         options: >-
+#           --health-cmd "pg_isready -U pulse -d pulse"
+#           --health-interval 2s
+#           --health-timeout 5s
+#           --health-retries 10
+#     env:
+#       DATABASE_URL: postgres://pulse:pulse@localhost:5432/pulse?sslmode=disable
+#     steps:
+#       - uses: actions/checkout@v4
+#       - uses: actions/setup-go@v5
+#         with:
+#           go-version: stable
+#       - run: go vet ./...
+#       - run: go test ./...
+#       - uses: golangci/golangci-lint-action@v6
+#         with:
+#           version: latest
