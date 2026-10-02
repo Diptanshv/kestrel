@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: pulse
+      POSTGRES_PASSWORD: pulse
+      POSTGRES_DB: pulse
+    ports:
+      # 5433 avoids clashing with a local Postgres on 5432 (common on macOS).
+      - "5433:5432"
+    volumes:
+      - pulse_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pulse -d pulse"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pulse_pgdata:

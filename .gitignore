@@ -1,0 +1,10 @@
+.env
+*.exe
+bin/
+dist/
+web/node_modules/
+tracker/dist/
+.DS_Store
+
+# Local phase progress notes (not pushed)
+Phases done/
