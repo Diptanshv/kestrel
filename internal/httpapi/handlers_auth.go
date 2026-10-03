@@ -61,7 +61,7 @@ func (api *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "2305" {
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			_ = writeError(w, http.StatusConflict, "email_taken", "email already exists")
 			return
 		}
@@ -128,7 +128,15 @@ func (api *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	csrf, err := newCSRFToken()
+	if err != nil {
+		api.Log.Error("csrf token", "err", err)
+		_ = writeError(w, http.StatusInternalServerError, "internal_server_error", "internal server error")
+		return
+	}
+
 	setSessionCookie(w, token, expires, api.Config.CookieSecure)
+	setCSRFCookie(w, csrf, api.Config.CookieSecure)
 	_ = writeJSON(w, http.StatusOK, userToResponse(user))
 }
 
@@ -149,13 +157,16 @@ func (api *API) handleMe(w http.ResponseWriter, r *http.Request) {
 	_ = writeJSON(w, http.StatusOK, userToResponse(user))
 }
 
-func (api *API) handleLogut(w http.ResponseWriter, r *http.Request) {
+func (api *API) handleLogout(w http.ResponseWriter, r *http.Request) {
 	token, err := readSessionCookie(r)
-	if err != nil {
+	if err == nil {
 		hash := auth.HashSessionToken(api.Config.SessionSecret, token)
-		_ = api.Q.DeleteSessionByTokenHash(r.Context(), hash)
+		if err := api.Q.DeleteSessionByTokenHash(r.Context(), hash); err != nil {
+			api.Log.Error("delete session", "err", err)
+		}
 	}
 
 	clearSessionCookie(w, api.Config.CookieSecure)
+	clearCSRFCookie(w, api.Config.CookieSecure)
 	w.WriteHeader(http.StatusNoContent)
 }

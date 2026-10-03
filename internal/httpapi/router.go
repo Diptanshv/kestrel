@@ -24,8 +24,9 @@ func NewRouter(logger *slog.Logger, queries *store.Queries, cfg config.Config) h
 
 	r.Group(func(r chi.Router) {
 		r.Use(api.requireAuth)
+		r.Use(api.requireCSRF)
 		r.Get("/api/auth/me", api.handleMe)
-		r.Post("/api/auth/logout", api.handleLogut)
+		r.Post("/api/auth/logout", api.handleLogout)
 	})
 
 	return r
