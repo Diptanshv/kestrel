@@ -25,6 +25,7 @@ func NewRouter(logger *slog.Logger, queries *store.Queries, cfg config.Config) h
 	r.Group(func(r chi.Router) {
 		r.Use(api.requireAuth)
 		r.Get("/api/auth/me", api.handleMe)
+		r.Post("/api/auth/logout", api.handleLogut)
 	})
 
 	return r

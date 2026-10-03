@@ -148,3 +148,14 @@ func (api *API) handleMe(w http.ResponseWriter, r *http.Request) {
 
 	_ = writeJSON(w, http.StatusOK, userToResponse(user))
 }
+
+func (api *API) handleLogut(w http.ResponseWriter, r *http.Request) {
+	token, err := readSessionCookie(r)
+	if err != nil {
+		hash := auth.HashSessionToken(api.Config.SessionSecret, token)
+		_ = api.Q.DeleteSessionByTokenHash(r.Context(), hash)
+	}
+
+	clearSessionCookie(w, api.Config.CookieSecure)
+	w.WriteHeader(http.StatusNoContent)
+}
