@@ -21,6 +21,11 @@ type userResponse struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type loginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
 // registerResponse is the JSON body for a successful POST /api/auth/register.
 type registerResponse = userResponse
 
@@ -65,11 +70,81 @@ func (api *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := registerResponse{
-		ID:        user.ID,
-		Email:     user.Email,
-		CreatedAt: user.CreatedAt,
-	}
+	response := userToResponse(user)
 
 	_ = writeJSON(w, http.StatusCreated, response)
+}
+
+func userToResponse(u store.User) userResponse {
+	return userResponse{
+		ID:        u.ID,
+		Email:     u.Email,
+		CreatedAt: u.CreatedAt,
+	}
+}
+
+func (api *API) handleLogin(w http.ResponseWriter, r *http.Request) {
+	var req loginRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		_ = writeError(w, http.StatusBadRequest, "invalid_request", "invalid request")
+		return
+	}
+
+	email, err := normaliseEmail(req.Email)
+	if err != nil {
+		_ = writeError(w, http.StatusUnauthorized, "unauthorized", "invalid credentials")
+		return
+	}
+
+	user, err := api.Q.GetUserByEmail(r.Context(), email)
+	if err != nil {
+		_ = writeError(w, http.StatusUnauthorized, "unauthorized", "invalid credentials")
+		return
+	}
+
+	if err := auth.VerifyPassword(req.Password, user.PasswordHash); err != nil {
+		_ = writeError(w, http.StatusUnauthorized, "unauthorized", "invalid credentials")
+		return
+	}
+
+	token, err := auth.NewSessionToken()
+	if err != nil {
+		api.Log.Error("session token", "err", err)
+		_ = writeError(w, http.StatusInternalServerError, "internal_server_error", "failed to create session")
+		return
+	}
+
+	expires := time.Now().UTC().Add(api.Config.SessionTTL)
+	hash := auth.HashSessionToken(api.Config.SessionSecret, token)
+
+	_, err = api.Q.CreateSession(r.Context(), store.CreateSessionParams{
+		UserID:    user.ID,
+		TokenHash: hash,
+		ExpiresAt: expires,
+	})
+	if err != nil {
+		api.Log.Error("create session", "err", err)
+		_ = writeError(w, http.StatusInternalServerError, "internal_server_error", "internal server error")
+		return
+	}
+
+	setSessionCookie(w, token, expires, api.Config.CookieSecure)
+	_ = writeJSON(w, http.StatusOK, userToResponse(user))
+}
+
+func (api *API) handleMe(w http.ResponseWriter, r *http.Request) {
+	userID, ok := userIDFromContext(r.Context())
+	if !ok {
+		_ = writeError(w, http.StatusUnauthorized, "unauthorized", "unauthorized")
+		return
+	}
+
+	user, err := api.Q.GetUserByID(r.Context(), userID)
+	if err != nil {
+		api.Log.Error("get user", "err", err)
+		_ = writeError(w, http.StatusInternalServerError, "internal_server_error", "failed to load user")
+		return
+	}
+
+	_ = writeJSON(w, http.StatusOK, userToResponse(user))
 }

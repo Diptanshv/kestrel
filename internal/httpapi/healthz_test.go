@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/Diptanshv/kestrel/internal/config"
 	"github.com/Diptanshv/kestrel/internal/httpapi"
 )
 
@@ -14,7 +15,7 @@ func TestHealthz(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.DiscardHandler)
-	srv := httptest.NewServer(httpapi.NewRouter(logger, nil))
+	srv := httptest.NewServer(httpapi.NewRouter(logger, nil, config.Config{}))
 	t.Cleanup(srv.Close)
 
 	resp, err := http.Get(srv.URL + "/healthz")
