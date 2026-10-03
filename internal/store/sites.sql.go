@@ -44,6 +44,23 @@ func (q *Queries) DeleteSite(ctx context.Context, id int64) error {
 	return err
 }
 
+const getSiteByDomain = `-- name: GetSiteByDomain :one
+SELECT id, user_id, domain, public_slug, created_at FROM sites WHERE domain = $1
+`
+
+func (q *Queries) GetSiteByDomain(ctx context.Context, domain string) (Site, error) {
+	row := q.db.QueryRowContext(ctx, getSiteByDomain, domain)
+	var i Site
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Domain,
+		&i.PublicSlug,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getSiteByID = `-- name: GetSiteByID :one
 SELECT id, user_id, domain, public_slug, created_at FROM sites WHERE id = $1
 `
