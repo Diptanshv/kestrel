@@ -9,6 +9,22 @@ import (
 	"time"
 )
 
+type EventsRaw struct {
+	ID        int64
+	SiteID    int64
+	Ts        time.Time
+	VisitorID []byte
+	SessionID int64
+	Name      string
+	Pathname  string
+	Referrer  sql.NullString
+	UtmSource sql.NullString
+	Country   sql.NullString
+	Browser   sql.NullString
+	Os        sql.NullString
+	Device    sql.NullString
+}
+
 type Session struct {
 	ID        int64
 	UserID    int64

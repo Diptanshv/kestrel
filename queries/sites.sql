@@ -19,3 +19,6 @@ RETURNING *;
 
 -- name: DeleteSite :exec
 DELETE FROM sites WHERE id=$1;
+
+-- name: GetSiteByDomain :one 
+SELECT * FROM sites WHERE domain = $1;
