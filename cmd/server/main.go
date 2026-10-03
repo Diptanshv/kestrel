@@ -14,6 +14,7 @@ import (
 
 	"github.com/Diptanshv/kestrel/internal/config"
 	"github.com/Diptanshv/kestrel/internal/httpapi"
+	"github.com/Diptanshv/kestrel/internal/store"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
@@ -58,9 +59,11 @@ func main() {
 	}
 	logger.Info("connected to database")
 
+	queries := store.New(db)
+
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,
-		Handler:      httpapi.NewRouter(logger),
+		Handler:      httpapi.NewRouter(logger, queries),
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,

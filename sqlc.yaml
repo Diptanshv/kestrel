@@ -1,0 +1,12 @@
+version: "2"
+sql:
+  - engine: postgresql
+    schema:
+      - migrations/000001_create_users_and_sites.up.sql
+      - migrations/000002_create_sessions.up.sql
+    queries: queries
+    gen:
+      go:
+        package: store
+        out: internal/store
+        sql_package: database/sql

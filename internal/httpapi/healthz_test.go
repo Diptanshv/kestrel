@@ -14,7 +14,7 @@ func TestHealthz(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.DiscardHandler)
-	srv := httptest.NewServer(httpapi.NewRouter(logger))
+	srv := httptest.NewServer(httpapi.NewRouter(logger, nil))
 	t.Cleanup(srv.Close)
 
 	resp, err := http.Get(srv.URL + "/healthz")
