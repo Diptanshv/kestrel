@@ -19,8 +19,18 @@ func NewRouter(logger *slog.Logger, queries *store.Queries, cfg config.Config) h
 	r.Use(requestLogger(logger))
 
 	r.Get("/healthz", handleHealthz)
+	r.Get("/script.js", handleScript)
+	r.Get("/demo.html", api.handleDemo)
 	r.Post("/api/auth/register", api.handleRegister)
 	r.Post("/api/auth/login", api.handleLogin)
+
+	// Public ingest: any origin may post, but the Origin must match the
+	// site's registered domain (checked in the handler).
+	r.Group(func(r chi.Router) {
+		r.Use(allowTrackerCORS)
+		r.Post("/api/event", api.handleEvent)
+		r.Options("/api/event", handleEventPreflight)
+	})
 
 	r.Group(func(r chi.Router) {
 		r.Use(api.requireAuth)
