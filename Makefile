@@ -23,3 +23,5 @@ test:
 
 vet:
 	go vet ./...
+sqlc:
+	sqlc generate
