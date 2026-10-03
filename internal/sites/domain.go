@@ -22,5 +22,7 @@ func NormalizeDomain(input string) (string, error) {
 	if host == "" || strings.Contains(host, " ") {
 		return "", fmt.Errorf("invalid domain")
 	}
+	// Canonical form: "www.example.com" and "example.com" are one site.
+	host = strings.TrimPrefix(host, "www.")
 	return host, nil
 }

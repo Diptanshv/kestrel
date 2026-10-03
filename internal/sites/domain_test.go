@@ -12,7 +12,7 @@ func TestNormalizeDomain(t *testing.T) {
 		{
 			name:  "https URL with www and uppercase",
 			input: "https://www.Example.com/",
-			want:  "www.example.com",
+			want:  "example.com",
 		},
 		{
 			name:  "http URL",
