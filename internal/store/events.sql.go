@@ -101,11 +101,28 @@ func (q *Queries) GetEventRawByID(ctx context.Context, id int64) (EventsRaw, err
 }
 
 const listEventsRawBySiteID = `-- name: ListEventsRawBySiteID :many
-SELECT id, site_id, ts, visitor_id, session_id, name, pathname, referrer, utm_source, country, browser, os, device FROM events_raw WHERE site_id = $1 ORDER BY id
+SELECT id, site_id, ts, visitor_id, session_id, name, pathname, referrer, utm_source, country, browser, os, device FROM events_raw
+WHERE site_id = $1
+  AND ts >= $2
+  AND ts < $3
+ORDER BY ts DESC, id DESC
+LIMIT $4
 `
 
-func (q *Queries) ListEventsRawBySiteID(ctx context.Context, siteID int64) ([]EventsRaw, error) {
-	rows, err := q.db.QueryContext(ctx, listEventsRawBySiteID, siteID)
+type ListEventsRawBySiteIDParams struct {
+	SiteID int64
+	Ts     time.Time
+	Ts_2   time.Time
+	Limit  int32
+}
+
+func (q *Queries) ListEventsRawBySiteID(ctx context.Context, arg ListEventsRawBySiteIDParams) ([]EventsRaw, error) {
+	rows, err := q.db.QueryContext(ctx, listEventsRawBySiteID,
+		arg.SiteID,
+		arg.Ts,
+		arg.Ts_2,
+		arg.Limit,
+	)
 	if err != nil {
 		return nil, err
 	}

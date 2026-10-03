@@ -14,6 +14,7 @@ type Config struct {
 	SessionSecret string // HMAC secret for session token hashing
 	CookieSecure  bool   // true in prod (HTTPS)
 	SessionTTL    time.Duration
+	EnableDemo    bool
 }
 
 func Load() (Config, error) {
@@ -24,6 +25,7 @@ func Load() (Config, error) {
 		SessionSecret:  os.Getenv("SESSION_SECRET"),
 		CookieSecure:   envOr("COOKIE_SECURE", "false") == "true",
 		SessionTTL:     envOrDuration("SESSION_TTL", 30*24*time.Hour),
+		EnableDemo:     envOr("ENABLE_DEMO", "false") == "true",
 	}
 	if c.DatabaseURL == "" {
 		return c, fmt.Errorf("DATABASE_URL is required")
