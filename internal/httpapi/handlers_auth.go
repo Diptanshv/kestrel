@@ -12,3 +12,6 @@ type userResponse struct {
 	Email     string    `json:"email"`
 	CreatedAt time.Time `json:"created_at"`
 }
+
+// registerResponse is the JSON body for a successful POST /api/auth/register.
+type registerResponse = userResponse
