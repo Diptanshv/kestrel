@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth-context'
+import { ErrorNote } from '../components/ui'
 
 export default function Login() {
   const { user, loading, login, register } = useAuth()
@@ -13,12 +14,14 @@ export default function Login() {
   if (loading) return null
   if (user) return <Navigate to="/sites" replace />
 
+  const registering = mode === 'register'
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
     setBusy(true)
     try {
-      await (mode === 'login' ? login(email, password) : register(email, password))
+      await (registering ? register(email, password) : login(email, password))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
     } finally {
@@ -26,46 +29,92 @@ export default function Login() {
     }
   }
 
+  const field =
+    'w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm placeholder:text-zinc-400 focus-visible:border-zinc-900 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-zinc-900'
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-zinc-50 px-4">
-      <form onSubmit={onSubmit} className="w-full max-w-sm space-y-4 rounded-xl border border-zinc-200 bg-white p-6 shadow-sm">
-        <h1 className="text-xl font-semibold text-zinc-900">
-          {mode === 'login' ? 'Sign in' : 'Create an account'}
-        </h1>
+    <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 px-4 py-12">
+      <div className="mb-6 flex items-center gap-2">
+        <span aria-hidden className="h-6 w-6 rounded-md bg-zinc-900" />
+        <span className="text-lg font-semibold tracking-tight text-zinc-900">kestrel</span>
+      </div>
 
-        <label className="block space-y-1">
-          <span className="text-sm text-zinc-700">Email</span>
+      <form
+        onSubmit={onSubmit}
+        className="w-full max-w-sm space-y-4 rounded-xl border border-zinc-200 bg-white p-6 shadow-sm"
+      >
+        <div>
+          <h1 className="text-lg font-semibold text-zinc-900">
+            {registering ? 'Create an account' : 'Sign in'}
+          </h1>
+          <p className="mt-1 text-sm text-zinc-500">
+            Privacy-first analytics. No cookies, no consent banner.
+          </p>
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="email" className="block text-sm font-medium text-zinc-700">
+            Email
+          </label>
           <input
-            type="email" required value={email} onChange={e => setEmail(e.target.value)}
-            className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+            id="email"
+            name="email"
+            type="email"
+            required
+            autoFocus
+            autoComplete="email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            className={field}
           />
-        </label>
+        </div>
 
-        <label className="block space-y-1">
-          <span className="text-sm text-zinc-700">Password</span>
+        <div className="space-y-1">
+          <label htmlFor="password" className="block text-sm font-medium text-zinc-700">
+            Password
+          </label>
           <input
-            type="password" required minLength={8} value={password} onChange={e => setPassword(e.target.value)}
-            className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+            id="password"
+            name="password"
+            type="password"
+            required
+            minLength={8}
+            autoComplete={registering ? 'new-password' : 'current-password'}
+            aria-describedby={registering ? 'password-hint' : undefined}
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            className={field}
           />
-          <span className="text-xs text-zinc-500">At least 8 characters.</span>
-        </label>
+          {registering && (
+            <p id="password-hint" className="text-xs text-zinc-500">
+              At least 8 characters.
+            </p>
+          )}
+        </div>
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <ErrorNote message={error} />}
 
         <button
-          type="submit" disabled={busy}
-          className="w-full rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+          type="submit"
+          disabled={busy}
+          className="w-full rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
         >
-          {busy ? 'Working...' : mode === 'login' ? 'Sign in' : 'Create account'}
+          {busy ? 'Working…' : registering ? 'Create account' : 'Sign in'}
         </button>
 
-        <button
-          type="button"
-          onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError('') }}
-          className="w-full text-sm text-zinc-600 underline"
-        >
-          {mode === 'login' ? 'Need an account?' : 'Already have an account?'}
-        </button>
+        <p className="text-center text-sm text-zinc-500">
+          {registering ? 'Already have an account?' : 'Need an account?'}{' '}
+          <button
+            type="button"
+            onClick={() => {
+              setMode(registering ? 'login' : 'register')
+              setError('')
+            }}
+            className="rounded font-medium text-zinc-900 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
+          >
+            {registering ? 'Sign in' : 'Create one'}
+          </button>
+        </p>
       </form>
     </div>
   )
