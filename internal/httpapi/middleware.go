@@ -26,3 +26,24 @@ func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 		})
 	}
 }
+
+// allowTrackerCORS echoes the request Origin so the tracker's fetch fallback
+// can read the response. sendBeacon ignores the response entirely, and the
+// text/plain body keeps the POST preflight-free, so this mostly matters for
+// the fallback path.
+func allowTrackerCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if origin := r.Header.Get("Origin"); origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Add("Vary", "Origin")
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func handleEventPreflight(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	w.Header().Set("Access-Control-Max-Age", "86400")
+	w.WriteHeader(http.StatusNoContent)
+}

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kestrel tracker demo</title>
+  <script defer src="/script.js" data-domain="localhost"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 4rem auto; padding: 0 1rem; line-height: 1.6; }
+    button { font: inherit; padding: 0.4rem 0.8rem; margin-right: 0.5rem; }
+    code { background: #f4f4f5; padding: 0.1rem 0.3rem; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <h1>Kestrel tracker demo</h1>
+  <p>
+    Loading this page fires one <code>pageview</code>. Requires a site whose
+    domain is <code>localhost</code>, and <code>ENABLE_DEMO=true</code>.
+  </p>
+  <p>
+    <button onclick="kestrel.track('signup')">Track "signup"</button>
+    <button onclick="history.pushState({}, '', '/demo.html?page=' + Date.now())">Fake SPA navigation</button>
+  </p>
+  <p>Then check the table:</p>
+  <pre><code>docker compose exec db psql -U pulse -d pulse \
+  -c "select ts, name, pathname, referrer, device from events_raw order by id desc limit 10"</code></pre>
+</body>
+</html>
