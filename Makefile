@@ -10,10 +10,10 @@ logs:
 	docker compose logs -f db
 
 migrate-up:
-	migrate -path migrations -database "$$DATABASE_URL" up
+	set -a && [ -f .env ] && . ./.env && set +a && migrate -path migrations -database "$$DATABASE_URL" up
 
 migrate-down:
-	migrate -path migrations -database "$$DATABASE_URL" down 1
+	set -a && [ -f .env ] && . ./.env && set +a && migrate -path migrations -database "$$DATABASE_URL" down 1
 
 run:
 	set -a && [ -f .env ] && . ./.env && set +a && go run ./cmd/server
