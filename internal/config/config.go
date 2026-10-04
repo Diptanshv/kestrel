@@ -14,7 +14,12 @@ type Config struct {
 	SessionSecret string // HMAC secret for session token hashing
 	CookieSecure  bool   // true in prod (HTTPS)
 	SessionTTL    time.Duration
-	EnableDemo    bool
+
+	// Timezone buckets the stats queries and labels the dashboard. Hourly and
+	// daily buckets both follow it, so a "day" is a local day rather than a
+	// UTC one. IANA name; "UTC" restores the original behaviour.
+	Timezone   string
+	EnableDemo bool
 }
 
 func Load() (Config, error) {
@@ -25,6 +30,7 @@ func Load() (Config, error) {
 		SessionSecret:  os.Getenv("SESSION_SECRET"),
 		CookieSecure:   envOr("COOKIE_SECURE", "false") == "true",
 		SessionTTL:     envOrDuration("SESSION_TTL", 30*24*time.Hour),
+		Timezone:       envOr("TIMEZONE", "Asia/Kolkata"),
 		EnableDemo:     envOr("ENABLE_DEMO", "false") == "true",
 	}
 	if c.DatabaseURL == "" {

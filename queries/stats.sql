@@ -14,8 +14,8 @@ SELECT
   count(e.id)::bigint                    AS pageviews,
   count(DISTINCT e.visitor_id)::bigint   AS visitors
 FROM generate_series(
-  date_trunc('hour', sqlc.arg(from_ts)::timestamptz),
-  date_trunc('hour', sqlc.arg(to_ts)::timestamptz - interval '1 microsecond'),
+  date_trunc('hour', sqlc.arg(from_ts)::timestamptz, sqlc.arg(tz)),
+  date_trunc('hour', sqlc.arg(to_ts)::timestamptz - interval '1 microsecond', sqlc.arg(tz)),
   interval '1 hour'
 ) AS b(bucket)
 LEFT JOIN events_raw e
@@ -32,8 +32,8 @@ SELECT
   count(e.id)::bigint                    AS pageviews,
   count(DISTINCT e.visitor_id)::bigint   AS visitors
 FROM generate_series(
-  date_trunc('day', sqlc.arg(from_ts)::timestamptz),
-  date_trunc('day', sqlc.arg(to_ts)::timestamptz - interval '1 microsecond'),
+  date_trunc('day', sqlc.arg(from_ts)::timestamptz, sqlc.arg(tz)),
+  date_trunc('day', sqlc.arg(to_ts)::timestamptz - interval '1 microsecond', sqlc.arg(tz)),
   interval '1 day'
 ) AS b(bucket)
 LEFT JOIN events_raw e

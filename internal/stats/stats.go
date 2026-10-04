@@ -38,9 +38,16 @@ const (
 // events_raw directly; Phase 8 routes long ranges to rollups instead.
 type Service struct {
 	Q *store.Queries
+	// Timezone the time series buckets in. Empty means UTC.
+	Timezone string
 }
 
-func New(q *store.Queries) *Service { return &Service{Q: q} }
+func New(q *store.Queries, timezone string) *Service {
+	if timezone == "" {
+		timezone = "UTC"
+	}
+	return &Service{Q: q, Timezone: timezone}
+}
 
 type Summary struct {
 	Pageviews int64
@@ -71,6 +78,7 @@ func (s *Service) Timeseries(ctx context.Context, siteID int64, r Range, interva
 			SiteID: siteID,
 			FromTs: r.From,
 			ToTs:   r.To,
+			Tz:     s.Timezone,
 		})
 		if err != nil {
 			return nil, err
@@ -86,6 +94,7 @@ func (s *Service) Timeseries(ctx context.Context, siteID int64, r Range, interva
 		SiteID: siteID,
 		FromTs: r.From,
 		ToTs:   r.To,
+		Tz:     s.Timezone,
 	})
 	if err != nil {
 		return nil, err

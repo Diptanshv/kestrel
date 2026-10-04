@@ -12,7 +12,7 @@ import (
 )
 
 func NewRouter(logger *slog.Logger, queries *store.Queries, cfg config.Config) http.Handler {
-	api := &API{Log: logger, Q: queries, Config: cfg, Stats: stats.New(queries)}
+	api := &API{Log: logger, Q: queries, Config: cfg, Stats: stats.New(queries, cfg.Timezone)}
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)

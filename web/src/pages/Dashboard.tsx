@@ -170,7 +170,7 @@ export default function Dashboard() {
 
           <p className="mt-6 text-xs leading-relaxed text-zinc-500">
             Visitors and pageviews count page loads only; custom events are listed separately.
-            Times are UTC. Bounce rate and visit duration need session tracking; countries,
+            Times are IST (UTC+5:30). Bounce rate and visit duration need session tracking; countries,
             browsers and devices need enrichment.
           </p>
         </>

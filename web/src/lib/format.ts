@@ -12,11 +12,19 @@ export function full(n: number): string {
   return n.toLocaleString()
 }
 
-/** Short axis label. UTC, because the API buckets in UTC. */
+/**
+ * The timezone every timestamp in the UI is shown in. The API buckets in the
+ * same zone (TIMEZONE on the server), so a "day" here is a local day, not a
+ * UTC one sliced at 05:30.
+ */
+export const TZ = 'Asia/Kolkata'
+export const TZ_LABEL = 'IST'
+
+/** Short axis label. */
 export function bucketLabel(iso: string, interval: string): string {
   const d = new Date(iso)
   return d.toLocaleString(undefined, {
-    timeZone: 'UTC',
+    timeZone: TZ,
     ...(interval === 'hour'
       ? { hour: '2-digit', minute: '2-digit' }
       : { month: 'short', day: 'numeric' }),
@@ -28,7 +36,7 @@ export function bucketTitle(iso: string, interval: string): string {
   const d = new Date(iso)
   const opts: Intl.DateTimeFormatOptions =
     interval === 'hour'
-      ? { timeZone: 'UTC', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }
-      : { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' }
-  return `${d.toLocaleString(undefined, opts)} UTC`
+      ? { timeZone: TZ, month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }
+      : { timeZone: TZ, weekday: 'short', month: 'short', day: 'numeric' }
+  return `${d.toLocaleString(undefined, opts)} ${TZ_LABEL}`
 }
