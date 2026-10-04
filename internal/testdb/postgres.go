@@ -24,6 +24,7 @@ func TestConfig() config.Config {
 		SessionSecret: "integration-test-session-secret",
 		CookieSecure:  false,
 		SessionTTL:    24 * time.Hour,
+		Timezone:      "Asia/Kolkata",
 	}
 }
 

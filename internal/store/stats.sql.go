@@ -214,12 +214,12 @@ SELECT
   count(e.id)::bigint                    AS pageviews,
   count(DISTINCT e.visitor_id)::bigint   AS visitors
 FROM generate_series(
-  date_trunc('day', $1::timestamptz),
-  date_trunc('day', $2::timestamptz - interval '1 microsecond'),
+  date_trunc('day', $1::timestamptz, $2),
+  date_trunc('day', $3::timestamptz - interval '1 microsecond', $2),
   interval '1 day'
 ) AS b(bucket)
 LEFT JOIN events_raw e
-  ON e.site_id = $3
+  ON e.site_id = $4
  AND e.name = 'pageview'
  AND e.ts >= b.bucket
  AND e.ts <  b.bucket + interval '1 day'
@@ -229,6 +229,7 @@ ORDER BY b.bucket
 
 type StatsTimeseriesDailyParams struct {
 	FromTs time.Time
+	Tz     string
 	ToTs   time.Time
 	SiteID int64
 }
@@ -240,7 +241,12 @@ type StatsTimeseriesDailyRow struct {
 }
 
 func (q *Queries) StatsTimeseriesDaily(ctx context.Context, arg StatsTimeseriesDailyParams) ([]StatsTimeseriesDailyRow, error) {
-	rows, err := q.db.QueryContext(ctx, statsTimeseriesDaily, arg.FromTs, arg.ToTs, arg.SiteID)
+	rows, err := q.db.QueryContext(ctx, statsTimeseriesDaily,
+		arg.FromTs,
+		arg.Tz,
+		arg.ToTs,
+		arg.SiteID,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -268,12 +274,12 @@ SELECT
   count(e.id)::bigint                    AS pageviews,
   count(DISTINCT e.visitor_id)::bigint   AS visitors
 FROM generate_series(
-  date_trunc('hour', $1::timestamptz),
-  date_trunc('hour', $2::timestamptz - interval '1 microsecond'),
+  date_trunc('hour', $1::timestamptz, $2),
+  date_trunc('hour', $3::timestamptz - interval '1 microsecond', $2),
   interval '1 hour'
 ) AS b(bucket)
 LEFT JOIN events_raw e
-  ON e.site_id = $3
+  ON e.site_id = $4
  AND e.name = 'pageview'
  AND e.ts >= b.bucket
  AND e.ts <  b.bucket + interval '1 hour'
@@ -283,6 +289,7 @@ ORDER BY b.bucket
 
 type StatsTimeseriesHourlyParams struct {
 	FromTs time.Time
+	Tz     string
 	ToTs   time.Time
 	SiteID int64
 }
@@ -294,7 +301,12 @@ type StatsTimeseriesHourlyRow struct {
 }
 
 func (q *Queries) StatsTimeseriesHourly(ctx context.Context, arg StatsTimeseriesHourlyParams) ([]StatsTimeseriesHourlyRow, error) {
-	rows, err := q.db.QueryContext(ctx, statsTimeseriesHourly, arg.FromTs, arg.ToTs, arg.SiteID)
+	rows, err := q.db.QueryContext(ctx, statsTimeseriesHourly,
+		arg.FromTs,
+		arg.Tz,
+		arg.ToTs,
+		arg.SiteID,
+	)
 	if err != nil {
 		return nil, err
 	}
