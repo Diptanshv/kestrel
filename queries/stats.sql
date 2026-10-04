@@ -72,3 +72,16 @@ WHERE site_id = sqlc.arg(site_id)
 GROUP BY referrer
 ORDER BY pageviews DESC, value ASC
 LIMIT sqlc.arg(row_limit);
+-- name: StatsBreakdownEvents :many
+SELECT
+  name                                   AS value,
+  count(*)::bigint                       AS pageviews,
+  count(DISTINCT visitor_id)::bigint     AS visitors
+FROM events_raw
+WHERE site_id = sqlc.arg(site_id)
+  AND ts >= sqlc.arg(from_ts)
+  AND ts <  sqlc.arg(to_ts)
+  AND name <> 'pageview'
+GROUP BY name
+ORDER BY pageviews DESC, value ASC
+LIMIT sqlc.arg(row_limit);

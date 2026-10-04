@@ -190,3 +190,69 @@ func TestStatsRequiresOwnership(t *testing.T) {
 }
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
+
+func TestStatsBreakdownEvents(t *testing.T) {
+	requireIntegration(t)
+	srv, base := newTestServer(t)
+	client := newAPIClient(t, srv, base)
+	client.register("events@example.com", "password123")
+	client.login("events@example.com", "password123")
+
+	resp, body := client.postJSON("/api/sites", map[string]string{"domain": "example.com"}, true)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create site status = %d, body = %s", resp.StatusCode, body)
+	}
+	siteID := siteIDFromCreate(t, body)
+
+	// Two signups from one visitor, one download from another, plus a
+	// pageview that must not appear in the event breakdown.
+	rows := []struct {
+		name    string
+		visitor byte
+	}{
+		{"signup", 1},
+		{"signup", 1},
+		{"download", 2},
+		{"pageview", 1},
+	}
+	for _, row := range rows {
+		visitor := make([]byte, 16)
+		visitor[0] = row.visitor
+		_, err := integrationDB.Exec(`
+			INSERT INTO events_raw (site_id, ts, visitor_id, session_id, name, pathname)
+			VALUES ($1, now(), $2, 0, $3, '/')
+		`, siteID, visitor, row.name)
+		if err != nil {
+			t.Fatalf("seed event: %v", err)
+		}
+	}
+
+	resp, body = client.get("/api/sites/" + itoa(siteID) + "/breakdown?dimension=event")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", resp.StatusCode, body)
+	}
+	var got struct {
+		Dimension string `json:"dimension"`
+		Rows      []struct {
+			Value     string `json:"value"`
+			Pageviews int64  `json:"pageviews"`
+			Visitors  int64  `json:"visitors"`
+		} `json:"rows"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if got.Dimension != "event" {
+		t.Errorf("dimension = %q, want event", got.Dimension)
+	}
+	if len(got.Rows) != 2 {
+		t.Fatalf("rows = %+v, want 2 (pageview must be excluded)", got.Rows)
+	}
+	if got.Rows[0].Value != "signup" || got.Rows[0].Pageviews != 2 || got.Rows[0].Visitors != 1 {
+		t.Errorf("rows[0] = %+v, want signup with 2 events from 1 visitor", got.Rows[0])
+	}
+	if got.Rows[1].Value != "download" || got.Rows[1].Pageviews != 1 {
+		t.Errorf("rows[1] = %+v, want download with 1 event", got.Rows[1])
+	}
+}

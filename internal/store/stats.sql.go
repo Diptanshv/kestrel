@@ -10,6 +10,62 @@ import (
 	"time"
 )
 
+const statsBreakdownEvents = `-- name: StatsBreakdownEvents :many
+SELECT
+  name                                   AS value,
+  count(*)::bigint                       AS pageviews,
+  count(DISTINCT visitor_id)::bigint     AS visitors
+FROM events_raw
+WHERE site_id = $1
+  AND ts >= $2
+  AND ts <  $3
+  AND name <> 'pageview'
+GROUP BY name
+ORDER BY pageviews DESC, value ASC
+LIMIT $4
+`
+
+type StatsBreakdownEventsParams struct {
+	SiteID   int64
+	FromTs   time.Time
+	ToTs     time.Time
+	RowLimit int32
+}
+
+type StatsBreakdownEventsRow struct {
+	Value     string
+	Pageviews int64
+	Visitors  int64
+}
+
+func (q *Queries) StatsBreakdownEvents(ctx context.Context, arg StatsBreakdownEventsParams) ([]StatsBreakdownEventsRow, error) {
+	rows, err := q.db.QueryContext(ctx, statsBreakdownEvents,
+		arg.SiteID,
+		arg.FromTs,
+		arg.ToTs,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []StatsBreakdownEventsRow
+	for rows.Next() {
+		var i StatsBreakdownEventsRow
+		if err := rows.Scan(&i.Value, &i.Pageviews, &i.Visitors); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const statsBreakdownPages = `-- name: StatsBreakdownPages :many
 SELECT
   pathname                               AS value,

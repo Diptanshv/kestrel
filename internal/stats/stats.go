@@ -15,16 +15,17 @@ type Dimension string
 const (
 	DimensionPage     Dimension = "page"
 	DimensionReferrer Dimension = "referrer"
+	DimensionEvent    Dimension = "event"
 )
 
 func ParseDimension(v string) (Dimension, error) {
 	switch Dimension(v) {
-	case DimensionPage, DimensionReferrer:
+	case DimensionPage, DimensionReferrer, DimensionEvent:
 		return Dimension(v), nil
 	case "":
 		return "", errors.New("dimension is required")
 	default:
-		return "", errors.New(`dimension must be "page" or "referrer"`)
+		return "", errors.New(`dimension must be "page", "referrer" or "event"`)
 	}
 }
 
@@ -106,6 +107,24 @@ func (s *Service) Breakdown(ctx context.Context, siteID int64, r Range, dim Dime
 	switch dim {
 	case DimensionPage:
 		rows, err := s.Q.StatsBreakdownPages(ctx, store.StatsBreakdownPagesParams{
+			SiteID:   siteID,
+			FromTs:   r.From,
+			ToTs:     r.To,
+			RowLimit: limit,
+		})
+		if err != nil {
+			return nil, err
+		}
+		out := make([]BreakdownRow, 0, len(rows))
+		for _, row := range rows {
+			out = append(out, BreakdownRow{Value: row.Value, Pageviews: row.Pageviews, Visitors: row.Visitors})
+		}
+		return out, nil
+
+	case DimensionEvent:
+		// Custom events only: 'pageview' is excluded by the query, so this
+		// counts goal completions rather than page loads.
+		rows, err := s.Q.StatsBreakdownEvents(ctx, store.StatsBreakdownEventsParams{
 			SiteID:   siteID,
 			FromTs:   r.From,
 			ToTs:     r.To,
