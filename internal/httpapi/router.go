@@ -5,13 +5,14 @@ import (
 	"net/http"
 
 	"github.com/Diptanshv/kestrel/internal/config"
+	"github.com/Diptanshv/kestrel/internal/stats"
 	"github.com/Diptanshv/kestrel/internal/store"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
 func NewRouter(logger *slog.Logger, queries *store.Queries, cfg config.Config) http.Handler {
-	api := &API{Log: logger, Q: queries, Config: cfg}
+	api := &API{Log: logger, Q: queries, Config: cfg, Stats: stats.New(queries)}
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -42,6 +43,9 @@ func NewRouter(logger *slog.Logger, queries *store.Queries, cfg config.Config) h
 		r.Get("/api/sites/{id}", api.handleGetSite)
 		r.Patch("/api/sites/{id}", api.handlePatchSite)
 		r.Delete("/api/sites/{id}", api.handleDeleteSite)
+		r.Get("/api/sites/{id}/summary", api.handleSiteSummary)
+		r.Get("/api/sites/{id}/timeseries", api.handleSiteTimeseries)
+		r.Get("/api/sites/{id}/breakdown", api.handleSiteBreakdown)
 	})
 
 	return r
