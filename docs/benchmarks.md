@@ -106,3 +106,67 @@ is built by merging 24 hourly sketches. It is compared with
 
 Merging 24 hourly p=12 sketches and estimating takes 0.44 ms
 (`BenchmarkMerge24Hourly`). Adding a visitor takes 6 ns (`BenchmarkAdd`).
+
+## Phase 13: load test (k6)
+
+```
+make loadtest                      # or: k6 run loadtest/ingest.js
+```
+
+**Setup.** The API runs in its production image, capped with
+`docker run --cpus 0.5 --memory 512m` to approximate a free-tier instance.
+Postgres 16 is a separate, uncapped container, and k6 runs in Docker on the
+same laptop. Rate limits were raised, because k6 sends from one IP to one
+site.
+
+**Load.** Each run ramps for 30 s to the peak, holds it for 60 s, then ramps
+down. Every beacon carries a unique User-Agent, so each one is a new
+visitor: the hash, session and cache paths all do real work.
+
+| Peak target | Achieved (whole run) | p50 | p95 | p99 | Failed | Accepted = written |
+|------------:|---------------------:|----:|----:|----:|-------:|:------------------:|
+| 2,000 req/s | 1,615 req/s avg | 0.55 ms | 1.4 ms | **4.5 ms** | 0 | 161,499 = 161,499 |
+| 2,600 req/s | 2,095 req/s avg | 0.57 ms | 2.0 ms | **8.1 ms** | 0 | yes |
+| 4,000 req/s | 3,198 req/s avg (k6 dropped 1,652 iterations) | 0.72 ms | 36 ms | 79 ms | 0 | 481,346 = 481,346 |
+
+"Achieved" averages over the ramps too, so the sustained rate during the
+hold was the peak target. Results:
+
+- **Capacity.** Half a CPU sustains **about 2,600 events/s within the
+  10 ms p99 target** (design requirement N1). Past that, CPU saturates and
+  latency climbs, but nothing is lost: every accepted event was written.
+  Buffer drops would only start once the 10k buffer filled, and none
+  occurred. Memory peaked at about 100 MB of the 512 MB.
+- **Default limits.** The defaults admit 200 events/s per site and 10/s per
+  IP. The pipeline has more than ten times the headroom of one busy site.
+
+## Phase 13: storage per 100k events
+
+```
+DATABASE_URL=... go run ./cmd/seed -visitors 1600 -seed 7   # 100,342 events over 30 days
+```
+
+Measured with `pg_total_relation_size`, which includes indexes, after
+`VACUUM ANALYZE`. The seeded traffic is 30 days of realistic visits: about
+2.7 pageviews per visit, 10 entry pages and 9 referrers.
+
+| Table | Rows | Size | Per 100k events |
+|-------|-----:|-----:|----------------:|
+| `events_raw` | 100,342 | 21.4 MB | **21.4 MB** (about 224 B/row with index) |
+| `rollup_hourly` (30 days) | 27,257 | 5.1 MB | 5.1 MB |
+| `rollup_daily` (30 days) | 1,380 | 0.25 MB | 0.25 MB |
+
+Every hourly sketch stayed sparse at this traffic level: 29 bytes on average,
+and no dense rows.
+
+**What this means for a 500 MB database:**
+
+- **Raw events** are kept for 48 hours, so at 100k events/day their steady
+  state is about 43 MB.
+- **Hourly rollups** are kept for 30 days. Their size grows with distinct
+  values, not with traffic: the top-50 cap bounds each dimension. That is
+  about 5 MB per site at this shape.
+- **Daily rollups** are kept forever, at about 3 MB per site-year.
+
+A site at 100k events/day therefore fits in well under 100 MB, and the
+remaining space holds many quieter sites.

@@ -7,6 +7,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"github.com/lib/pq"
@@ -26,15 +27,17 @@ func (q *Queries) DeleteEventsRawBefore(ctx context.Context, ts time.Time) (int6
 
 const deleteRollupDailyRange = `-- name: DeleteRollupDailyRange :exec
 DELETE FROM rollup_daily WHERE day >= $1 AND day < $2
+  AND ($3::bigint IS NULL OR site_id = $3)
 `
 
 type DeleteRollupDailyRangeParams struct {
 	FromDay time.Time
 	ToDay   time.Time
+	SiteID  sql.NullInt64
 }
 
 func (q *Queries) DeleteRollupDailyRange(ctx context.Context, arg DeleteRollupDailyRangeParams) error {
-	_, err := q.db.ExecContext(ctx, deleteRollupDailyRange, arg.FromDay, arg.ToDay)
+	_, err := q.db.ExecContext(ctx, deleteRollupDailyRange, arg.FromDay, arg.ToDay, arg.SiteID)
 	return err
 }
 
@@ -52,17 +55,20 @@ func (q *Queries) DeleteRollupHourlyBefore(ctx context.Context, bucket time.Time
 
 const deleteRollupHourlyRange = `-- name: DeleteRollupHourlyRange :exec
 DELETE FROM rollup_hourly WHERE bucket >= $1 AND bucket < $2
+  AND ($3::bigint IS NULL OR site_id = $3)
 `
 
 type DeleteRollupHourlyRangeParams struct {
 	FromTs time.Time
 	ToTs   time.Time
+	SiteID sql.NullInt64
 }
 
 // Re-rolling replaces whole buckets: a value that has since been folded into
 // (other) must not survive from the previous run.
+// site_id NULL means every site (the scheduled job); set, it scopes a backfill.
 func (q *Queries) DeleteRollupHourlyRange(ctx context.Context, arg DeleteRollupHourlyRangeParams) error {
-	_, err := q.db.ExecContext(ctx, deleteRollupHourlyRange, arg.FromTs, arg.ToTs)
+	_, err := q.db.ExecContext(ctx, deleteRollupHourlyRange, arg.FromTs, arg.ToTs, arg.SiteID)
 	return err
 }
 
@@ -91,12 +97,14 @@ SELECT site_id, ts, visitor_id, session_id, name, pathname,
        coalesce(device, '')::text   AS device
 FROM events_raw
 WHERE ts >= $1 AND ts < $2
+  AND ($3::bigint IS NULL OR site_id = $3)
 ORDER BY ts, id
 `
 
 type ListEventsForRollupParams struct {
 	FromTs time.Time
 	ToTs   time.Time
+	SiteID sql.NullInt64
 }
 
 type ListEventsForRollupRow struct {
@@ -115,7 +123,7 @@ type ListEventsForRollupRow struct {
 
 // Everything the aggregator needs, oldest first.
 func (q *Queries) ListEventsForRollup(ctx context.Context, arg ListEventsForRollupParams) ([]ListEventsForRollupRow, error) {
-	rows, err := q.db.QueryContext(ctx, listEventsForRollup, arg.FromTs, arg.ToTs)
+	rows, err := q.db.QueryContext(ctx, listEventsForRollup, arg.FromTs, arg.ToTs, arg.SiteID)
 	if err != nil {
 		return nil, err
 	}
@@ -153,11 +161,13 @@ const listRollupHourlyRange = `-- name: ListRollupHourlyRange :many
 SELECT site_id, bucket, dimension, value, pageviews, visits, bounces, duration_sum, visitors_hll
 FROM rollup_hourly
 WHERE bucket >= $1 AND bucket < $2
+  AND ($3::bigint IS NULL OR site_id = $3)
 `
 
 type ListRollupHourlyRangeParams struct {
 	FromTs time.Time
 	ToTs   time.Time
+	SiteID sql.NullInt64
 }
 
 type ListRollupHourlyRangeRow struct {
@@ -174,7 +184,7 @@ type ListRollupHourlyRangeRow struct {
 
 // Input for daily rows: every hourly row, sketch included, in [from, to).
 func (q *Queries) ListRollupHourlyRange(ctx context.Context, arg ListRollupHourlyRangeParams) ([]ListRollupHourlyRangeRow, error) {
-	rows, err := q.db.QueryContext(ctx, listRollupHourlyRange, arg.FromTs, arg.ToTs)
+	rows, err := q.db.QueryContext(ctx, listRollupHourlyRange, arg.FromTs, arg.ToTs, arg.SiteID)
 	if err != nil {
 		return nil, err
 	}

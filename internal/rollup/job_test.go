@@ -202,3 +202,56 @@ func TestResumesFromState(t *testing.T) {
 		t.Fatal("late event was not picked up by the re-roll")
 	}
 }
+
+// TestBackfillIsSiteScoped: backdated events for one site get rolled up
+// without disturbing another site's history, whose raw events are long gone.
+func TestBackfillIsSiteScoped(t *testing.T) {
+	job, siteA := setup(t)
+	now := time.Now()
+	job.Now = func() time.Time { return now }
+
+	// Site A: old traffic, rolled up, raw deleted by retention.
+	insertEvent(t, siteA, now.Add(-5*24*time.Hour), 1, 1, "pageview", "/a")
+	if _, err := job.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Site B appears with backdated events behind the frontier.
+	var siteB int64
+	if err := pg.QueryRow(`INSERT INTO sites (user_id, domain) SELECT user_id, 'b.example' FROM sites WHERE id = $1 RETURNING id`, siteA).Scan(&siteB); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 4 {
+		insertEvent(t, siteB, now.Add(-time.Duration(3*24+i)*time.Hour), byte(20+i), int64(20+i), "pageview", "/b")
+	}
+
+	// A scheduled run alone would delete them unrolled; Backfill first.
+	if _, err := job.Backfill(context.Background(), siteB, now.Add(-4*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := job.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	var pvB, pvA int
+	_ = pg.QueryRow(`SELECT coalesce(sum(pageviews),0) FROM rollup_daily WHERE site_id = $1 AND dimension = '_total'`, siteB).Scan(&pvB)
+	_ = pg.QueryRow(`SELECT coalesce(sum(pageviews),0) FROM rollup_daily WHERE site_id = $1 AND dimension = '_total'`, siteA).Scan(&pvA)
+	if pvB != 4 {
+		t.Fatalf("site B daily pageviews = %d, want 4", pvB)
+	}
+	if pvA != 1 {
+		t.Fatalf("site A daily pageviews = %d, want 1 (backfill must not touch it)", pvA)
+	}
+	if n := countRows(t); n != 0 {
+		t.Fatalf("raw rows = %d, want 0 after retention", n)
+	}
+}
+
+func countRows(t *testing.T) int {
+	t.Helper()
+	var n int
+	if err := pg.QueryRow(`SELECT count(*) FROM events_raw`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}

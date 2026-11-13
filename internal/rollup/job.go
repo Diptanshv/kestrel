@@ -139,9 +139,6 @@ func (j *Job) run(ctx context.Context) (Result, error) {
 	if err != nil {
 		return res, fmt.Errorf("load events: %w", err)
 	}
-	hourly := capValues(aggregate(events, func(t time.Time) time.Time { return TruncHour(t, cfg.Loc) }, hourFrom, hourTo), cfg.TopN)
-	res.HourlyRows = len(hourly)
-
 	tx, err := j.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return res, err
@@ -149,38 +146,8 @@ func (j *Job) run(ctx context.Context) (Result, error) {
 	defer func() { _ = tx.Rollback() }()
 	q := j.Q.WithTx(tx)
 
-	if err := q.DeleteRollupHourlyRange(ctx, store.DeleteRollupHourlyRangeParams{FromTs: hourFrom, ToTs: hourTo}); err != nil {
-		return res, fmt.Errorf("clear hourly: %w", err)
-	}
-	if len(hourly) > 0 {
-		params, err := hourlyParams(hourly)
-		if err != nil {
-			return res, err
-		}
-		if err := q.UpsertRollupHourly(ctx, params); err != nil {
-			return res, fmt.Errorf("upsert hourly: %w", err)
-		}
-	}
-	// Days are rebuilt from the hourly rows just written, inside the same
-	// transaction, so a re-rolled hour flows straight into its day.
-	hourRows, err := q.ListRollupHourlyRange(ctx, store.ListRollupHourlyRangeParams{FromTs: dayFrom, ToTs: dayTo})
-	if err != nil {
-		return res, fmt.Errorf("load hourly: %w", err)
-	}
-	daily, err := mergeHourly(hourRows, cfg.Loc)
-	if err != nil {
+	if res.HourlyRows, res.DailyRows, err = j.rebuild(ctx, q, sql.NullInt64{}, events, hourFrom, hourTo, dayFrom, dayTo); err != nil {
 		return res, err
-	}
-	daily = capValues(daily, cfg.TopN)
-	res.DailyRows = len(daily)
-
-	if err := q.DeleteRollupDailyRange(ctx, store.DeleteRollupDailyRangeParams{FromDay: AsDate(dayFrom), ToDay: AsDate(dayTo)}); err != nil {
-		return res, fmt.Errorf("clear daily: %w", err)
-	}
-	if len(daily) > 0 {
-		if err := q.UpsertRollupDaily(ctx, dailyParams(daily)); err != nil {
-			return res, fmt.Errorf("upsert daily: %w", err)
-		}
 	}
 	if err := q.SetRollupState(ctx, store.SetRollupStateParams{HourlyThrough: hourTo, DailyThrough: AsDate(dayTo)}); err != nil {
 		return res, fmt.Errorf("save state: %w", err)
@@ -206,6 +173,102 @@ func (j *Job) run(ctx context.Context) (Result, error) {
 	if err := j.Q.DeleteSaltsBefore(ctx, saltCutoff); err != nil {
 		return res, fmt.Errorf("retention salts: %w", err)
 	}
+	return res, nil
+}
+
+// rebuild replaces hourly rows in [hourFrom, hourTo) with ones computed from
+// events, then rebuilds daily rows in [dayFrom, dayTo) from the hourly
+// rows. site scopes every delete and read to one site; NULL means all.
+func (j *Job) rebuild(ctx context.Context, q *store.Queries, site sql.NullInt64, events []store.ListEventsForRollupRow,
+	hourFrom, hourTo, dayFrom, dayTo time.Time) (hourlyRows, dailyRows int, err error) {
+	cfg := j.Cfg
+	hourly := capValues(aggregate(events, func(t time.Time) time.Time { return TruncHour(t, cfg.Loc) }, hourFrom, hourTo), cfg.TopN)
+
+	if err := q.DeleteRollupHourlyRange(ctx, store.DeleteRollupHourlyRangeParams{FromTs: hourFrom, ToTs: hourTo, SiteID: site}); err != nil {
+		return 0, 0, fmt.Errorf("clear hourly: %w", err)
+	}
+	if len(hourly) > 0 {
+		params, err := hourlyParams(hourly)
+		if err != nil {
+			return 0, 0, err
+		}
+		if err := q.UpsertRollupHourly(ctx, params); err != nil {
+			return 0, 0, fmt.Errorf("upsert hourly: %w", err)
+		}
+	}
+
+	// Days are rebuilt from the hourly rows just written, inside the same
+	// transaction, so a re-rolled hour flows straight into its day.
+	hourRows, err := q.ListRollupHourlyRange(ctx, store.ListRollupHourlyRangeParams{FromTs: dayFrom, ToTs: dayTo, SiteID: site})
+	if err != nil {
+		return 0, 0, fmt.Errorf("load hourly: %w", err)
+	}
+	daily, err := mergeHourly(hourRows, cfg.Loc)
+	if err != nil {
+		return 0, 0, err
+	}
+	daily = capValues(daily, cfg.TopN)
+
+	if err := q.DeleteRollupDailyRange(ctx, store.DeleteRollupDailyRangeParams{FromDay: AsDate(dayFrom), ToDay: AsDate(dayTo), SiteID: site}); err != nil {
+		return 0, 0, fmt.Errorf("clear daily: %w", err)
+	}
+	if len(daily) > 0 {
+		if err := q.UpsertRollupDaily(ctx, dailyParams(daily)); err != nil {
+			return 0, 0, fmt.Errorf("upsert daily: %w", err)
+		}
+	}
+	return len(hourly), len(daily), nil
+}
+
+// Backfill rolls up one site's raw events from `from` to now, without
+// touching other sites or the job's saved frontier. Anything that inserts
+// backdated events (an import, the demo seeder) must call it: the scheduled
+// job only re-rolls recent hours, and retention would otherwise delete the
+// old rows before they were summarised.
+func (j *Job) Backfill(ctx context.Context, siteID int64, from time.Time) (Result, error) {
+	start := time.Now()
+	conn, err := j.DB.Conn(ctx)
+	if err != nil {
+		return Result{}, err
+	}
+	defer func() { _ = conn.Close() }()
+	// Blocking lock: a backfill should wait for a scheduled run, not skip.
+	if _, err := conn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", lockKey); err != nil {
+		return Result{}, fmt.Errorf("advisory lock: %w", err)
+	}
+	defer func() {
+		_, _ = conn.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", lockKey)
+	}()
+
+	cfg := j.Cfg
+	now := j.Now()
+	hourFrom, hourTo := TruncHour(from, cfg.Loc), TruncHour(now, cfg.Loc)
+	dayFrom, dayTo := TruncDay(from, cfg.Loc), TruncDay(now, cfg.Loc)
+	res := Result{
+		HourlyFrom: hourFrom, HourlyTo: hourTo,
+		DailyFrom: dayFrom.Format(time.DateOnly), DailyTo: dayTo.Format(time.DateOnly),
+	}
+
+	site := sql.NullInt64{Int64: siteID, Valid: true}
+	events, err := j.Q.ListEventsForRollup(ctx, store.ListEventsForRollupParams{
+		FromTs: hourFrom.Add(-cfg.SessionLookback), ToTs: now, SiteID: site,
+	})
+	if err != nil {
+		return res, fmt.Errorf("load events: %w", err)
+	}
+
+	tx, err := j.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return res, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if res.HourlyRows, res.DailyRows, err = j.rebuild(ctx, j.Q.WithTx(tx), site, events, hourFrom, hourTo, dayFrom, dayTo); err != nil {
+		return res, err
+	}
+	if err := tx.Commit(); err != nil {
+		return res, err
+	}
+	res.DurationMS = time.Since(start).Milliseconds()
 	return res, nil
 }
 

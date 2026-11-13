@@ -2,6 +2,101 @@
 
 Each entry records what was chosen, what it costs, and what would change it.
 
+## Cookieless visitor identity
+
+**Choice.** `visitor_id = first16(HMAC-SHA256(daily_salt, site_id || ip ||
+user_agent))`. Each UTC day gets a fresh random salt, which is deleted after
+2 days. IP and User-Agent are used in memory and never stored.
+
+**Cost.** Unique visitors are only comparable within a UTC day. Someone who
+visits on Monday and Tuesday counts twice (see "Multi-day uniques" below).
+Two people behind one NAT with an identical browser build count once.
+
+**Why.** No cookies and no persistent identifiers means no consent banner.
+Once a salt is deleted, nobody can link a hash back to an IP or to another
+day, including us.
+
+## Sessions in memory, one instance
+
+**Choice.** A map of `(site, visitor) → {session_id, last_seen}`, with a
+30-minute inactivity window, a forced break at 00:00 UTC (the salt changes
+there anyway), and eviction every minute. Session IDs are random 63-bit
+integers, so restarts never reuse one.
+
+**Cost.**
+- A restart forgets open sessions: a visit spanning a deploy is counted as
+  two.
+- It pins the service to one instance.
+
+**Why.** It is the cheapest correct option for a free-tier box. A Postgres
+lookup per event would put database I/O back in the ingest path, which
+Phase 6 removed. Redis is the scale-out path (see
+[architecture.md](architecture.md)).
+
+## Batched ingestion: drop under overload
+
+**Choice.**
+- Handlers enqueue onto a 10k channel without blocking.
+- One goroutine flushes with `COPY` at 500 events or every 2 s.
+- When the buffer is full, the event is dropped and counted; it is never
+  queued behind the request.
+- A failed `COPY` drops its batch rather than retrying.
+
+**Cost.**
+- A hard kill loses up to 2 s of events. `SIGTERM` drains them.
+- A database outage loses events instead of backing up.
+
+**Why.** Analytics must never slow the customer's page. `COPY` is 22×
+faster than per-row inserts, and the handler's p99 fell from 39 ms to
+1.9 ms (benchmarks.md). Retrying failed batches would let an outage fill
+memory and then stall the request path.
+
+## `text/plain` beacons
+
+The tracker posts JSON as `text/plain`. That keeps the request a CORS "simple
+request", so there is no preflight round trip, and `sendBeacon` works
+everywhere. The server parses the body as JSON regardless of the content
+type.
+
+## Buckets in the configured time zone, not UTC
+
+The design doc said "UTC only". The dashboard is used from India, though,
+where UTC days start at 05:30. So stats and rollups both bucket in
+`TIMEZONE` (default `Asia/Kolkata`):
+
+- hourly rows start on the local hour;
+- daily rows hold the local calendar date.
+
+**Cost.**
+- One time zone per deployment, not per site.
+- The visitor salt still rotates at 00:00 UTC, mid-way through an IST day,
+  so a person active at 04:00 and 07:00 IST counts as two visitors that day.
+- Changing `TIMEZONE` later misaligns existing rollup rows.
+
+Per-site zones are a stretch goal; they would need 15-minute buckets
+(UTC+5:30 does not align to UTC hours).
+
+## Retention with `DELETE`, not partitions
+
+**Choice.** The rollup job runs `DELETE FROM events_raw WHERE ts < cutoff`
+after each run.
+
+**Why.** Raw data is at most about 48 hours of events, a few hundred
+thousand rows. A range `DELETE` on the `(site_id, ts)` index plus autovacuum
+handles that comfortably, and it avoids managing daily partitions (create
+ahead, detach, drop) on a free-tier database.
+
+**Would change if:** raw volume reached millions of rows per day. Then
+dropping whole daily partitions would beat `DELETE` plus vacuum.
+
+## Cardinality cap: top 50 per bucket, rest is `(other)`
+
+Each rollup bucket keeps the 50 values with the most pageviews per
+dimension and folds the rest into `(other)`, summing counters and merging
+sketches. That bounds rollup size whatever a site, or an attacker, sends.
+Long-tail values appear only within the 48 h raw window. The dashboard
+explains `(other)` in its footnote and in a tooltip.
+
 ## HyperLogLog: precision 12, own implementation
 
 **Choice.** `internal/hll` with p=12 (4,096 registers, about 1.6% standard
@@ -52,11 +147,21 @@ recomputes only the last 2 hours before that point. Raw retention never
 deletes past the frontier, so nothing it has not yet rolled up is lost.
 
 This relies on one invariant: an event's `ts` is the server's receive time,
-so new rows never land far behind the frontier. Anything that inserts
-backdated rows directly (a seeder, an import) must run before the first
-rollup, or clear `rollup_state` first. Otherwise those rows sit behind the
-frontier, are never rolled up, and retention deletes them. The demo seeder
-does this.
+so new rows never land far behind the frontier. Backdated inserts (imports,
+the demo seeder) break that invariant. On the next run they would sit behind
+the frontier, never be rolled up, and be deleted by retention. During
+development a preview seed lost 4,821 rows exactly this way.
+
+Resetting `rollup_state` is not the fix either. The next run would then
+rebuild every hour back to the oldest raw event and delete other sites'
+hourly rows whose raw events are already gone. So backdated data goes
+through `rollup.Job.Backfill(site, from)`, which:
+
+- rebuilds hours and days for that one site only;
+- takes the same advisory lock;
+- leaves the frontier alone.
+
+`TestBackfillIsSiteScoped` covers it.
 
 ## Filters only cover the raw window
 

@@ -18,15 +18,19 @@ SELECT site_id, ts, visitor_id, session_id, name, pathname,
        coalesce(device, '')::text   AS device
 FROM events_raw
 WHERE ts >= sqlc.arg(from_ts) AND ts < sqlc.arg(to_ts)
+  AND (sqlc.narg(site_id)::bigint IS NULL OR site_id = sqlc.narg(site_id))
 ORDER BY ts, id;
 
 -- name: DeleteRollupHourlyRange :exec
 -- Re-rolling replaces whole buckets: a value that has since been folded into
 -- (other) must not survive from the previous run.
-DELETE FROM rollup_hourly WHERE bucket >= sqlc.arg(from_ts) AND bucket < sqlc.arg(to_ts);
+-- site_id NULL means every site (the scheduled job); set, it scopes a backfill.
+DELETE FROM rollup_hourly WHERE bucket >= sqlc.arg(from_ts) AND bucket < sqlc.arg(to_ts)
+  AND (sqlc.narg(site_id)::bigint IS NULL OR site_id = sqlc.narg(site_id));
 
 -- name: DeleteRollupDailyRange :exec
-DELETE FROM rollup_daily WHERE day >= sqlc.arg(from_day) AND day < sqlc.arg(to_day);
+DELETE FROM rollup_daily WHERE day >= sqlc.arg(from_day) AND day < sqlc.arg(to_day)
+  AND (sqlc.narg(site_id)::bigint IS NULL OR site_id = sqlc.narg(site_id));
 
 -- name: UpsertRollupHourly :exec
 -- Bulk upsert from parallel arrays; multiple unnest() calls in one select
@@ -55,7 +59,8 @@ SET pageviews    = EXCLUDED.pageviews,
 -- Input for daily rows: every hourly row, sketch included, in [from, to).
 SELECT site_id, bucket, dimension, value, pageviews, visits, bounces, duration_sum, visitors_hll
 FROM rollup_hourly
-WHERE bucket >= sqlc.arg(from_ts) AND bucket < sqlc.arg(to_ts);
+WHERE bucket >= sqlc.arg(from_ts) AND bucket < sqlc.arg(to_ts)
+  AND (sqlc.narg(site_id)::bigint IS NULL OR site_id = sqlc.narg(site_id));
 
 -- name: UpsertRollupDaily :exec
 INSERT INTO rollup_daily (site_id, day, dimension, value, pageviews, visitors, visits, bounces, duration_sum)

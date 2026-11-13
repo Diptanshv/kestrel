@@ -1,4 +1,4 @@
-.PHONY: up down logs migrate-up migrate-down run test test-db vet sqlc web-install web-dev web-build geoip
+.PHONY: up down logs migrate-up migrate-down run test test-db vet sqlc web-install web-dev web-build geoip seed loadtest
 
 # The suite TRUNCATEs users CASCADE between tests, which would wipe the dev
 # database. Point it at a separate one unless the caller already chose a target.
@@ -52,3 +52,15 @@ geoip:
 		"https://download.db-ip.com/free/dbip-country-lite-$$(date +%Y-%m).mmdb.gz"
 	gunzip -f data/dbip-country-lite.mmdb.gz
 	@echo "data/dbip-country-lite.mmdb ready - set GEOIP_DB_PATH to it"
+
+# Recreates the demo site (domain demo.kestrel.dev, public at /share/demo)
+# with 30 days of synthetic traffic. Run the server once first so the
+# schema is migrated. Other sites are not touched.
+seed:
+	set -a; [ -f .env ] && . ./.env; set +a; go run ./cmd/seed
+
+# k6 against a running stack, via Docker so k6 need not be installed.
+# Raise INGEST_IP_RATE on the server first: k6 sends from one IP.
+LOADTEST_URL ?= http://host.docker.internal:8080
+loadtest:
+	docker run --rm -i -e BASE_URL=$(LOADTEST_URL) -v $(PWD)/loadtest:/scripts grafana/k6 run /scripts/ingest.js
