@@ -18,7 +18,7 @@ const rollupSecret = "test-rollup-secret"
 
 func newRollupServer(t *testing.T) (*httptest.Server, *apiClient) {
 	t.Helper()
-	srv, base := newTestServer(t) // resets the database
+	srv, _ := newTestServer(t) // resets the database
 	srv.Close()
 
 	logger := slog.New(slog.DiscardHandler)
@@ -30,7 +30,7 @@ func newRollupServer(t *testing.T) (*httptest.Server, *apiClient) {
 
 	srv = httptest.NewServer(httpapi.NewRouter(d))
 	t.Cleanup(srv.Close)
-	base, _ = url.Parse(srv.URL)
+	base, _ := url.Parse(srv.URL)
 	return srv, newAPIClient(t, srv, base)
 }
 

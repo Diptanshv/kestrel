@@ -7,6 +7,7 @@ import (
 	"github.com/Diptanshv/kestrel/internal/batch"
 	"github.com/Diptanshv/kestrel/internal/config"
 	"github.com/Diptanshv/kestrel/internal/enrich"
+	"github.com/Diptanshv/kestrel/internal/ratelimit"
 	"github.com/Diptanshv/kestrel/internal/rollup"
 	"github.com/Diptanshv/kestrel/internal/stats"
 	"github.com/Diptanshv/kestrel/internal/store"
@@ -28,6 +29,16 @@ type Deps struct {
 	Sink    EventSink
 	// Rollup backs POST /internal/rollup. Nil disables the route.
 	Rollup RollupRunner
+	// Limits are the in-memory rate limiters. Nil fields disable that limit,
+	// which is what tests that fire thousands of requests from one IP want.
+	Limits Limits
+}
+
+// Limits groups the token buckets the API enforces.
+type Limits struct {
+	IngestIP   *ratelimit.Limiter // POST /api/event, keyed by client IP (/64 for IPv6)
+	IngestSite *ratelimit.Limiter // POST /api/event, keyed by site
+	Auth       *ratelimit.Limiter // login and register, keyed by client IP
 }
 
 // RollupRunner is the slice of *rollup.Job the HTTP layer needs.
@@ -43,5 +54,6 @@ type API struct {
 	Enrich *enrich.Enricher
 	Sink   EventSink
 	Rollup RollupRunner
+	Limits Limits
 	sites  *siteCache
 }

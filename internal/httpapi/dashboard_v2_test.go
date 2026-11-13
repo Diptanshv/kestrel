@@ -63,7 +63,7 @@ func TestRealtime(t *testing.T) {
 	f.insert(t, 3*time.Minute, 2, 2, "/", "FR")
 	f.insert(t, 10*time.Minute, 3, 3, "/", "FR") // outside the 5-minute window
 
-	got := decode[struct{ Visitors int64 }](t)(f.client.get(f.base+"/realtime"))
+	got := decode[struct{ Visitors int64 }](t)(f.client.get(f.base + "/realtime"))
 	if got.Visitors != 2 {
 		t.Fatalf("realtime visitors = %d, want 2", got.Visitors)
 	}
@@ -89,7 +89,7 @@ func TestFiltersNarrowAndClamp(t *testing.T) {
 		BounceRate float64   `json:"bounce_rate"`
 		Previous   *struct{} `json:"previous"`
 	}
-	de := decode[summary](t)(f.client.get(f.base+"/summary?country=DE&from="+from))
+	de := decode[summary](t)(f.client.get(f.base + "/summary?country=DE&from=" + from))
 	if de.Pageviews != 2 || de.Visits != 1 || de.BounceRate != 0 {
 		t.Fatalf("country=DE summary = %+v, want 2 pageviews, 1 visit, 0%% bounce", de)
 	}
@@ -103,7 +103,7 @@ func TestFiltersNarrowAndClamp(t *testing.T) {
 
 	// A page filter keeps whole sessions: visitor 1's visit touched
 	// /pricing, so it counts, and is still judged by both its pageviews.
-	pricing := decode[summary](t)(f.client.get(f.base+"/summary?page=/pricing"))
+	pricing := decode[summary](t)(f.client.get(f.base + "/summary?page=/pricing"))
 	if pricing.Pageviews != 1 || pricing.Visits != 1 || pricing.BounceRate != 0 {
 		t.Fatalf("page=/pricing summary = %+v", pricing)
 	}
@@ -114,7 +114,7 @@ func TestFiltersNarrowAndClamp(t *testing.T) {
 			Pageviews int64  `json:"pageviews"`
 		} `json:"rows"`
 	}
-	pages := decode[breakdown](t)(f.client.get(f.base+"/breakdown?dimension=page&country=FR"))
+	pages := decode[breakdown](t)(f.client.get(f.base + "/breakdown?dimension=page&country=FR"))
 	if len(pages.Rows) != 1 || pages.Rows[0].Value != "/" {
 		t.Fatalf("pages for FR = %+v, want just /", pages.Rows)
 	}
@@ -133,7 +133,7 @@ func TestSummaryPreviousPeriod(t *testing.T) {
 		Previous  *struct {
 			Pageviews int64 `json:"pageviews"`
 		} `json:"previous"`
-	}](t)(f.client.get(f.base+"/summary?from="+from))
+	}](t)(f.client.get(f.base + "/summary?from=" + from))
 	if got.Pageviews != 1 || got.Previous == nil || got.Previous.Pageviews != 2 {
 		t.Fatalf("summary = %+v, previous = %+v; want 1 now, 2 before", got, got.Previous)
 	}

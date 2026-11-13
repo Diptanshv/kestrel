@@ -16,7 +16,11 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-const defaultDatabaseURL = "postgres://pulse:pulse@127.0.0.1:5433/pulse?sslmode=disable"
+// defaultDatabaseURL must never be the dev database: Reset TRUNCATEs users
+// CASCADE, which empties every table. A bare `go test` without
+// TEST_DATABASE_URL lands here, so it points at the dedicated test database
+// (`make test-db` creates it).
+const defaultDatabaseURL = "postgres://pulse:pulse@127.0.0.1:5433/pulse_test?sslmode=disable"
 
 // TestConfig returns API config suitable for httptest integration tests.
 func TestConfig() config.Config {

@@ -46,21 +46,43 @@ func TestMetricsEndpoint(t *testing.T) {
 
 	logger := slog.New(slog.DiscardHandler)
 	enricher := enrich.New(enrich.NewSaltStore(nil), &enrich.Geo{})
-	srv := httptest.NewServer(httpapi.NewRouter(httpapi.Deps{Log: logger, Enrich: enricher}))
-	t.Cleanup(srv.Close)
-
-	resp, err := http.Get(srv.URL + "/metrics")
-	if err != nil {
-		t.Fatalf("GET /metrics: %v", err)
+	get := func(cfg config.Config, token string) (*http.Response, string) {
+		t.Helper()
+		srv := httptest.NewServer(httpapi.NewRouter(httpapi.Deps{Log: logger, Config: cfg, Enrich: enricher}))
+		defer srv.Close()
+		req, _ := http.NewRequest(http.MethodGet, srv.URL+"/metrics", nil)
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("GET /metrics: %v", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		body, _ := io.ReadAll(resp.Body)
+		return resp, string(body)
 	}
-	defer func() { _ = resp.Body.Close() }()
-	body, _ := io.ReadAll(resp.Body)
+
+	if resp, _ := get(config.Config{}, "anything"); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("no token configured: status = %d, want 404", resp.StatusCode)
+	}
+	withToken := config.Config{MetricsToken: "m-secret"}
+	if resp, _ := get(withToken, ""); resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("missing token: status = %d, want 401", resp.StatusCode)
+	}
+	if resp, _ := get(withToken, "wrong"); resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("wrong token: status = %d, want 401", resp.StatusCode)
+	}
+	resp, body := get(withToken, "m-secret")
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d", resp.StatusCode)
+		t.Fatalf("good token: status = %d", resp.StatusCode)
 	}
 	for _, name := range []string{"events_received_total", "batch_flush_duration_seconds", "buffer_depth"} {
-		if !strings.Contains(string(body), name) {
+		if !strings.Contains(body, name) {
 			t.Errorf("/metrics missing %s", name)
 		}
+	}
+	if got := resp.Header.Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("X-Content-Type-Options = %q, want nosniff", got)
 	}
 }
