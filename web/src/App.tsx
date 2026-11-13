@@ -18,6 +18,7 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/sites" element={<RequireAuth><Sites /></RequireAuth>} />
       <Route path="/sites/:id" element={<RequireAuth><Dashboard /></RequireAuth>} />
+      <Route path="/share/:slug" element={<Dashboard />} />
       <Route path="*" element={<Navigate to="/sites" replace />} />
     </Routes>
   )

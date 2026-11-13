@@ -158,7 +158,7 @@ func TestStatsSummaryAndBreakdown(t *testing.T) {
 		for _, path := range []string{
 			"/summary?from=last%20tuesday",
 			"/timeseries?interval=week",
-			"/breakdown?dimension=country",
+			"/breakdown?dimension=not-a-dimension",
 			"/breakdown?dimension=page&limit=0",
 		} {
 			resp, body := client.get("/api/sites/" + itoa(siteID) + path)

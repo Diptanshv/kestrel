@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"log/slog"
 	"net/http"
@@ -12,13 +14,19 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Diptanshv/kestrel/internal/batch"
 	"github.com/Diptanshv/kestrel/internal/config"
+	"github.com/Diptanshv/kestrel/internal/enrich"
 	"github.com/Diptanshv/kestrel/internal/httpapi"
+	"github.com/Diptanshv/kestrel/internal/ratelimit"
+	"github.com/Diptanshv/kestrel/internal/rollup"
+	"github.com/Diptanshv/kestrel/internal/sessions"
 	"github.com/Diptanshv/kestrel/internal/store"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers "pgx" driver for database/sql
+	_ "time/tzdata"                    // the distroless image has no zoneinfo; TIMEZONE must still resolve
 )
 
 const shutdownTimeout = 10 * time.Second
@@ -61,12 +69,68 @@ func main() {
 
 	queries := store.New(db)
 
+	geo, err := enrich.OpenGeo(cfg.GeoIPDBPath)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		// The container image sets the path but the build may have failed
+		// to fetch the file; run without countries rather than not at all.
+		logger.Warn("geoip database missing; country will be empty", "path", cfg.GeoIPDBPath)
+		geo, cfg.GeoIPDBPath = &enrich.Geo{}, ""
+	case err != nil:
+		logger.Error("geoip open failed", "path", cfg.GeoIPDBPath, "err", err)
+		os.Exit(1)
+	}
+	defer func() { _ = geo.Close() }()
+	if cfg.GeoIPDBPath == "" && err == nil {
+		logger.Warn("geoip disabled; country will be empty", "hint", "set GEOIP_DB_PATH")
+	}
+
+	enricher := enrich.New(enrich.NewSaltStore(queries), geo)
+	enricher.Sessions = sessions.New()
+	bgCtx, stopBackground := context.WithCancel(context.Background())
+	defer stopBackground()
+	go enricher.Sessions.Run(bgCtx, time.Minute)
+
+	batcher := batch.New(batch.CopyWriter{DB: db}, logger, batch.Config{
+		BufferSize:    cfg.IngestBufferSize,
+		BatchSize:     cfg.IngestBatchSize,
+		FlushInterval: cfg.IngestFlushInterval,
+	})
+	batcher.Start()
+
+	loc, err := time.LoadLocation(cfg.Timezone)
+	if err != nil {
+		logger.Error("invalid TIMEZONE", "tz", cfg.Timezone, "err", err)
+		os.Exit(1)
+	}
+	rollupJob := rollup.New(db, rollup.DefaultConfig(loc), logger)
+	go rollupJob.RunEvery(bgCtx, cfg.RollupInterval)
+
+	limits := httpapi.Limits{
+		IngestIP:   ratelimit.New(cfg.IngestIPRate, cfg.IngestIPBurst),
+		IngestSite: ratelimit.New(cfg.IngestSiteRate, cfg.IngestSiteBurst),
+		Auth:       ratelimit.New(10.0/60, 10), // 10 attempts a minute per IP
+	}
+	for _, l := range []*ratelimit.Limiter{limits.IngestIP, limits.IngestSite, limits.Auth} {
+		go l.RunSweeper(bgCtx, time.Minute)
+	}
+
 	srv := &http.Server{
-		Addr:         ":" + cfg.Port,
-		Handler:      httpapi.NewRouter(logger, queries, cfg),
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Addr: ":" + cfg.Port,
+		Handler: httpapi.NewRouter(httpapi.Deps{
+			Log:     logger,
+			Queries: queries,
+			Config:  cfg,
+			Enrich:  enricher,
+			Sink:    batcher,
+			Rollup:  rollupJob,
+			Limits:  limits,
+		}),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    16 << 10,
 	}
 
 	go func() {
@@ -84,8 +148,13 @@ func main() {
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer shutdownCancel()
+	// Order matters: stop the HTTP server first so no handler is still
+	// enqueueing, then drain the buffer into Postgres.
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("graceful shutdown failed", "err", err)
+	}
+	if err := batcher.Close(shutdownCtx); err != nil {
+		logger.Error("batcher drain failed", "err", err, "pending", batcher.Depth())
 		os.Exit(1)
 	}
 	logger.Info("server stopped")

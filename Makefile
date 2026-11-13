@@ -1,11 +1,11 @@
-.PHONY: up down logs migrate-up migrate-down run test test-db vet sqlc web-install web-dev web-build
+.PHONY: up down logs migrate-up migrate-down run test test-db vet sqlc web-install web-dev web-build geoip seed loadtest
 
 # The suite TRUNCATEs users CASCADE between tests, which would wipe the dev
 # database. Point it at a separate one unless the caller already chose a target.
 TEST_DATABASE_URL ?= postgres://pulse:pulse@127.0.0.1:5433/pulse_test?sslmode=disable
 
 up:
-	docker compose up -d
+	docker compose up -d db
 
 down:
 	docker compose down
@@ -29,8 +29,9 @@ test-db:
 		"SELECT 1 FROM pg_database WHERE datname='pulse_test'" | grep -q 1 \
 		|| docker compose exec -T db psql -U pulse -d postgres -c "CREATE DATABASE pulse_test"
 
+# -p 1: packages share pulse_test and each one TRUNCATEs it.
 test: test-db
-	TEST_DATABASE_URL="$(TEST_DATABASE_URL)" go test ./...
+	TEST_DATABASE_URL="$(TEST_DATABASE_URL)" go test -p 1 ./cmd/... ./internal/...
 
 vet:
 	go vet ./...
@@ -44,3 +45,22 @@ web-dev:
 
 web-build:
 	cd web && npm run build
+
+geoip:
+	@mkdir -p data
+	curl -fSL -o data/dbip-country-lite.mmdb.gz \
+		"https://download.db-ip.com/free/dbip-country-lite-$$(date +%Y-%m).mmdb.gz"
+	gunzip -f data/dbip-country-lite.mmdb.gz
+	@echo "data/dbip-country-lite.mmdb ready - set GEOIP_DB_PATH to it"
+
+# Recreates the demo site (domain demo.kestrel.dev, public at /share/demo)
+# with 30 days of synthetic traffic. Run the server once first so the
+# schema is migrated. Other sites are not touched.
+seed:
+	set -a; [ -f .env ] && . ./.env; set +a; go run ./cmd/seed
+
+# k6 against a running stack, via Docker so k6 need not be installed.
+# Raise INGEST_IP_RATE on the server first: k6 sends from one IP.
+LOADTEST_URL ?= http://host.docker.internal:8080
+loadtest:
+	docker run --rm -i -e BASE_URL=$(LOADTEST_URL) -v $(PWD)/loadtest:/scripts grafana/k6 run /scripts/ingest.js

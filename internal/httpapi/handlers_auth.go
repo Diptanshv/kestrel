@@ -26,9 +26,6 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
-// registerResponse is the JSON body for a successful POST /api/auth/register.
-type registerResponse = userResponse
-
 func (api *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 	var req registerRequest
 	if err := decodeJSON(w, r, &req); err != nil {
