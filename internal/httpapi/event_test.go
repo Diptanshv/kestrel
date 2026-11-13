@@ -9,7 +9,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/Diptanshv/kestrel/internal/enrich"
 	"github.com/Diptanshv/kestrel/internal/httpapi"
 	"github.com/Diptanshv/kestrel/internal/store"
 )
@@ -92,8 +91,7 @@ func newSiteForEventsOnExistingDB(t *testing.T) *httptest.Server {
 	requireIntegration(t)
 	logger := slog.New(slog.DiscardHandler)
 	q := store.New(integrationDB)
-	enricher := enrich.New(enrich.NewSaltStore(q), &enrich.Geo{})
-	srv := httptest.NewServer(httpapi.NewRouter(logger, q, integrationCfg, enricher))
+	srv := httptest.NewServer(httpapi.NewRouter(testDeps(logger, q)))
 	t.Cleanup(srv.Close)
 	return srv
 }
