@@ -47,6 +47,7 @@ type RollupHourly struct {
 	Visits      int32
 	Bounces     int32
 	DurationSum int64
+	VisitorsHll []byte
 }
 
 type RollupState struct {

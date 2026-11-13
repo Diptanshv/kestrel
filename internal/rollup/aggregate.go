@@ -1,9 +1,11 @@
 package rollup
 
 import (
+	"fmt"
 	"sort"
 	"time"
 
+	"github.com/Diptanshv/kestrel/internal/hll"
 	"github.com/Diptanshv/kestrel/internal/store"
 )
 
@@ -20,23 +22,31 @@ type key struct {
 	value     string
 }
 
-// agg accumulates one rollup row. visitors is an exact set here; Phase 9
-// swaps it for a sketch so daily rows can be merged from hourly ones.
+// agg accumulates one rollup row. Visitors go into a HyperLogLog sketch so
+// that hourly rows can later be merged into daily ones without raw events.
 type agg struct {
 	pageviews int
 	visits    int
 	bounces   int
 	duration  int64
-	visitors  map[[16]byte]struct{}
+	visitors  *hll.Sketch
 }
 
-func (a *agg) addVisitor(v []byte) {
+func (a *agg) sketch() *hll.Sketch {
 	if a.visitors == nil {
-		a.visitors = make(map[[16]byte]struct{})
+		a.visitors = hll.New(hll.DefaultPrecision)
 	}
-	var k [16]byte
-	copy(k[:], v)
-	a.visitors[k] = struct{}{}
+	return a.visitors
+}
+
+func (a *agg) addVisitor(v []byte) { a.sketch().Add(v) }
+
+// uniques is the estimated distinct visitor count.
+func (a *agg) uniques() int {
+	if a.visitors == nil {
+		return 0
+	}
+	return int(a.visitors.Estimate())
 }
 
 func (a *agg) merge(b *agg) {
@@ -44,11 +54,9 @@ func (a *agg) merge(b *agg) {
 	a.visits += b.visits
 	a.bounces += b.bounces
 	a.duration += b.duration
-	for v := range b.visitors {
-		if a.visitors == nil {
-			a.visitors = make(map[[16]byte]struct{})
-		}
-		a.visitors[v] = struct{}{}
+	if b.visitors != nil {
+		// Same precision everywhere, so Merge cannot fail.
+		_ = a.sketch().Merge(b.visitors)
 	}
 }
 
@@ -155,6 +163,32 @@ func aggregate(events []store.ListEventsForRollupRow, bucketOf func(time.Time) t
 		}
 	}
 	return rows
+}
+
+// mergeHourly builds daily rows from hourly ones: counters add up and
+// sketches merge, so a day's uniques are exact up to sketch error even
+// though raw events are long gone. Rows already folded into (other) at the
+// hourly level stay there.
+func mergeHourly(rows []store.ListRollupHourlyRangeRow, loc *time.Location) (map[key]*agg, error) {
+	out := make(map[key]*agg)
+	for _, r := range rows {
+		k := key{r.SiteID, TruncDay(r.Bucket, loc), r.Dimension, r.Value}
+		a, ok := out[k]
+		if !ok {
+			a = &agg{}
+			out[k] = a
+		}
+		h := &agg{pageviews: int(r.Pageviews), visits: int(r.Visits), bounces: int(r.Bounces), duration: r.DurationSum}
+		if len(r.VisitorsHll) > 0 {
+			sk, err := hll.Unmarshal(r.VisitorsHll)
+			if err != nil {
+				return nil, fmt.Errorf("sketch for %v %s=%q: %w", r.Bucket, r.Dimension, r.Value, err)
+			}
+			h.visitors = sk
+		}
+		a.merge(h)
+	}
+	return out, nil
 }
 
 // capValues keeps the topN values per (site, bucket, dimension) by
