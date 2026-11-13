@@ -18,6 +18,7 @@ func NewRouter(d Deps) http.Handler {
 		Enrich: d.Enrich,
 		Sink:   d.Sink,
 		Rollup: d.Rollup,
+		Limits: d.Limits,
 		sites:  newSiteCache(d.Queries),
 	}
 
@@ -26,14 +27,15 @@ func NewRouter(d Deps) http.Handler {
 	r.Use(middleware.Recoverer)
 	r.Use(requestLogger(d.Log))
 	r.Use(observeDuration)
+	r.Use(securityHeaders)
 
 	r.Get("/healthz", handleHealthz)
-	r.Handle("/metrics", promhttp.Handler())
+	r.Handle("/metrics", api.requireMetricsToken(promhttp.Handler()))
 	r.Get("/script.js", handleScript)
 	r.Get("/demo.html", api.handleDemo)
 	r.Post("/internal/rollup", api.handleRollup)
-	r.Post("/api/auth/register", api.handleRegister)
-	r.Post("/api/auth/login", api.handleLogin)
+	r.With(api.limitAuth).Post("/api/auth/register", api.handleRegister)
+	r.With(api.limitAuth).Post("/api/auth/login", api.handleLogin)
 
 	// Public ingest: any origin may post, but the Origin must match the
 	// site's registered domain (checked in the handler).

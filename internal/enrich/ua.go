@@ -1,6 +1,16 @@
 package enrich
 
-import "github.com/mileusna/useragent"
+import (
+	"strings"
+	"unicode"
+	"unicode/utf8"
+
+	"github.com/mileusna/useragent"
+)
+
+// maxLabelLen caps browser and OS names. Unknown browsers come through as
+// whatever token the client sent, so the label is attacker-controlled.
+const maxLabelLen = 32
 
 // UA is what we keep from a user agent string. The string itself is never
 // stored - only these three coarse labels.
@@ -20,7 +30,7 @@ func ParseUA(s string) UA {
 	}
 
 	ua := useragent.Parse(s)
-	out := UA{Browser: ua.Name, OS: ua.OS, Bot: ua.Bot}
+	out := UA{Browser: label(ua.Name), OS: label(ua.OS), Bot: ua.Bot}
 	switch {
 	case ua.Tablet:
 		out.Device = "tablet"
@@ -30,4 +40,19 @@ func ParseUA(s string) UA {
 		out.Device = "desktop"
 	}
 	return out
+}
+
+// label makes a parser-derived name safe to store: valid UTF-8, no control
+// characters, bounded length. Anything else is dropped to "".
+func label(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) > maxLabelLen || !utf8.ValidString(s) {
+		return ""
+	}
+	for _, r := range s {
+		if unicode.IsControl(r) {
+			return ""
+		}
+	}
+	return s
 }

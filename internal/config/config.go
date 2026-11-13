@@ -35,6 +35,18 @@ type Config struct {
 	// the in-process ticker runs either way.
 	RollupSecret   string
 	RollupInterval time.Duration
+
+	// TrustedProxyHops is how many reverse proxies sit in front of the API
+	// (1 on Render, Fly and similar). 0 ignores X-Forwarded-For entirely.
+	TrustedProxyHops int
+	// MetricsToken guards GET /metrics. Empty disables the endpoint.
+	MetricsToken string
+
+	// Token-bucket limits on POST /api/event, per client IP and per site.
+	IngestIPRate    float64
+	IngestIPBurst   float64
+	IngestSiteRate  float64
+	IngestSiteBurst float64
 }
 
 func Load() (Config, error) {
@@ -55,6 +67,14 @@ func Load() (Config, error) {
 
 		RollupSecret:   os.Getenv("ROLLUP_SECRET"),
 		RollupInterval: envOrDuration("ROLLUP_INTERVAL", 15*time.Minute),
+
+		TrustedProxyHops: envOrIntZero("TRUSTED_PROXY_HOPS", 0),
+		MetricsToken:     os.Getenv("METRICS_TOKEN"),
+
+		IngestIPRate:    envOrFloat("INGEST_IP_RATE", 10),
+		IngestIPBurst:   envOrFloat("INGEST_IP_BURST", 50),
+		IngestSiteRate:  envOrFloat("INGEST_SITE_RATE", 200),
+		IngestSiteBurst: envOrFloat("INGEST_SITE_BURST", 1000),
 	}
 	if c.DatabaseURL == "" {
 		return c, fmt.Errorf("DATABASE_URL is required")
@@ -92,6 +112,29 @@ func envOrInt(key string, def int) int {
 			return def
 		}
 		return n
+	}
+	return def
+}
+
+// envOrIntZero is envOrInt for settings where 0 is meaningful.
+func envOrIntZero(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			return def
+		}
+		return n
+	}
+	return def
+}
+
+func envOrFloat(key string, def float64) float64 {
+	if v := os.Getenv(key); v != "" {
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil || f <= 0 {
+			return def
+		}
+		return f
 	}
 	return def
 }

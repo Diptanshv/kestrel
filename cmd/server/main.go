@@ -16,6 +16,7 @@ import (
 	"github.com/Diptanshv/kestrel/internal/config"
 	"github.com/Diptanshv/kestrel/internal/enrich"
 	"github.com/Diptanshv/kestrel/internal/httpapi"
+	"github.com/Diptanshv/kestrel/internal/ratelimit"
 	"github.com/Diptanshv/kestrel/internal/rollup"
 	"github.com/Diptanshv/kestrel/internal/sessions"
 	"github.com/Diptanshv/kestrel/internal/store"
@@ -96,6 +97,15 @@ func main() {
 	rollupJob := rollup.New(db, rollup.DefaultConfig(loc), logger)
 	go rollupJob.RunEvery(bgCtx, cfg.RollupInterval)
 
+	limits := httpapi.Limits{
+		IngestIP:   ratelimit.New(cfg.IngestIPRate, cfg.IngestIPBurst),
+		IngestSite: ratelimit.New(cfg.IngestSiteRate, cfg.IngestSiteBurst),
+		Auth:       ratelimit.New(10.0/60, 10), // 10 attempts a minute per IP
+	}
+	for _, l := range []*ratelimit.Limiter{limits.IngestIP, limits.IngestSite, limits.Auth} {
+		go l.RunSweeper(bgCtx, time.Minute)
+	}
+
 	srv := &http.Server{
 		Addr: ":" + cfg.Port,
 		Handler: httpapi.NewRouter(httpapi.Deps{
@@ -105,10 +115,13 @@ func main() {
 			Enrich:  enricher,
 			Sink:    batcher,
 			Rollup:  rollupJob,
+			Limits:  limits,
 		}),
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    16 << 10,
 	}
 
 	go func() {
