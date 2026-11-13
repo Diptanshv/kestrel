@@ -85,3 +85,63 @@ WHERE site_id = sqlc.arg(site_id)
 GROUP BY name
 ORDER BY pageviews DESC, value ASC
 LIMIT sqlc.arg(row_limit);
+
+-- name: StatsBreakdownCountries :many
+SELECT
+  coalesce(country, '')::text            AS value,
+  count(*)::bigint                       AS pageviews,
+  count(DISTINCT visitor_id)::bigint     AS visitors
+FROM events_raw
+WHERE site_id = sqlc.arg(site_id)
+  AND ts >= sqlc.arg(from_ts)
+  AND ts <  sqlc.arg(to_ts)
+  AND name = 'pageview'
+  AND country IS NOT NULL
+GROUP BY country
+ORDER BY pageviews DESC, value ASC
+LIMIT sqlc.arg(row_limit);
+
+-- name: StatsBreakdownBrowsers :many
+SELECT
+  coalesce(browser, '')::text            AS value,
+  count(*)::bigint                       AS pageviews,
+  count(DISTINCT visitor_id)::bigint     AS visitors
+FROM events_raw
+WHERE site_id = sqlc.arg(site_id)
+  AND ts >= sqlc.arg(from_ts)
+  AND ts <  sqlc.arg(to_ts)
+  AND name = 'pageview'
+  AND browser IS NOT NULL AND browser <> ''
+GROUP BY browser
+ORDER BY pageviews DESC, value ASC
+LIMIT sqlc.arg(row_limit);
+
+-- name: StatsBreakdownOS :many
+SELECT
+  coalesce(os, '')::text                 AS value,
+  count(*)::bigint                       AS pageviews,
+  count(DISTINCT visitor_id)::bigint     AS visitors
+FROM events_raw
+WHERE site_id = sqlc.arg(site_id)
+  AND ts >= sqlc.arg(from_ts)
+  AND ts <  sqlc.arg(to_ts)
+  AND name = 'pageview'
+  AND os IS NOT NULL AND os <> ''
+GROUP BY os
+ORDER BY pageviews DESC, value ASC
+LIMIT sqlc.arg(row_limit);
+
+-- name: StatsBreakdownDevices :many
+SELECT
+  coalesce(device, '')::text             AS value,
+  count(*)::bigint                       AS pageviews,
+  count(DISTINCT visitor_id)::bigint     AS visitors
+FROM events_raw
+WHERE site_id = sqlc.arg(site_id)
+  AND ts >= sqlc.arg(from_ts)
+  AND ts <  sqlc.arg(to_ts)
+  AND name = 'pageview'
+  AND device IS NOT NULL AND device <> ''
+GROUP BY device
+ORDER BY pageviews DESC, value ASC
+LIMIT sqlc.arg(row_limit);

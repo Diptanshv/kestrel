@@ -4,6 +4,7 @@ import (
 	"log/slog"
 
 	"github.com/Diptanshv/kestrel/internal/config"
+	"github.com/Diptanshv/kestrel/internal/enrich"
 	"github.com/Diptanshv/kestrel/internal/stats"
 	"github.com/Diptanshv/kestrel/internal/store"
 )
@@ -13,4 +14,5 @@ type API struct {
 	Q      *store.Queries
 	Config config.Config
 	Stats  *stats.Service
+	Enrich *enrich.Enricher
 }

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/Diptanshv/kestrel/internal/config"
+	"github.com/Diptanshv/kestrel/internal/enrich"
 	"github.com/Diptanshv/kestrel/internal/httpapi"
 )
 
@@ -15,7 +16,8 @@ func TestHealthz(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.DiscardHandler)
-	srv := httptest.NewServer(httpapi.NewRouter(logger, nil, config.Config{}))
+	enricher := enrich.New(enrich.NewSaltStore(nil), &enrich.Geo{})
+	srv := httptest.NewServer(httpapi.NewRouter(logger, nil, config.Config{}, enricher))
 	t.Cleanup(srv.Close)
 
 	resp, err := http.Get(srv.URL + "/healthz")

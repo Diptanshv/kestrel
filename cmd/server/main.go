@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Diptanshv/kestrel/internal/config"
+	"github.com/Diptanshv/kestrel/internal/enrich"
 	"github.com/Diptanshv/kestrel/internal/httpapi"
 	"github.com/Diptanshv/kestrel/internal/store"
 	"github.com/golang-migrate/migrate/v4"
@@ -61,9 +62,21 @@ func main() {
 
 	queries := store.New(db)
 
+	geo, err := enrich.OpenGeo(cfg.GeoIPDBPath)
+	if err != nil {
+		logger.Error("geoip open failed", "path", cfg.GeoIPDBPath, "err", err)
+		os.Exit(1)
+	}
+	defer func() { _ = geo.Close() }()
+	if cfg.GeoIPDBPath == "" {
+		logger.Warn("geoip disabled; country will be empty", "hint", "set GEOIP_DB_PATH")
+	}
+
+	enricher := enrich.New(enrich.NewSaltStore(queries), geo)
+
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,
-		Handler:      httpapi.NewRouter(logger, queries, cfg),
+		Handler:      httpapi.NewRouter(logger, queries, cfg, enricher),
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,

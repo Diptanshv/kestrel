@@ -1,4 +1,4 @@
-.PHONY: up down logs migrate-up migrate-down run test test-db vet sqlc web-install web-dev web-build
+.PHONY: up down logs migrate-up migrate-down run test test-db vet sqlc web-install web-dev web-build geoip
 
 # The suite TRUNCATEs users CASCADE between tests, which would wipe the dev
 # database. Point it at a separate one unless the caller already chose a target.
@@ -44,3 +44,10 @@ web-dev:
 
 web-build:
 	cd web && npm run build
+
+geoip:
+	@mkdir -p data
+	curl -fSL -o data/dbip-country-lite.mmdb.gz \
+		"https://download.db-ip.com/free/dbip-country-lite-$$(date +%Y-%m).mmdb.gz"
+	gunzip -f data/dbip-country-lite.mmdb.gz
+	@echo "data/dbip-country-lite.mmdb ready - set GEOIP_DB_PATH to it"
