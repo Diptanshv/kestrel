@@ -6,6 +6,12 @@ FROM events_raw
 WHERE site_id = sqlc.arg(site_id)
   AND ts >= sqlc.arg(from_ts)
   AND ts <  sqlc.arg(to_ts)
+  AND (sqlc.narg(f_page)::text IS NULL OR pathname = sqlc.narg(f_page))
+  AND (sqlc.narg(f_referrer)::text IS NULL OR referrer = sqlc.narg(f_referrer))
+  AND (sqlc.narg(f_country)::text IS NULL OR country = sqlc.narg(f_country))
+  AND (sqlc.narg(f_browser)::text IS NULL OR browser = sqlc.narg(f_browser))
+  AND (sqlc.narg(f_os)::text IS NULL OR os = sqlc.narg(f_os))
+  AND (sqlc.narg(f_device)::text IS NULL OR device = sqlc.narg(f_device))
   AND name = 'pageview';
 
 -- name: StatsSessions :one
@@ -23,6 +29,15 @@ WITH s AS (
     AND ts <  sqlc.arg(to_ts)
     AND session_id <> 0
   GROUP BY session_id
+  -- Filters pick whole sessions (any event matches), so a filtered bounce
+  -- rate still judges each visit by all of its pageviews.
+  HAVING true
+     AND (sqlc.narg(f_page)::text IS NULL OR bool_or(pathname = sqlc.narg(f_page)))
+     AND (sqlc.narg(f_referrer)::text IS NULL OR bool_or(referrer = sqlc.narg(f_referrer)))
+     AND (sqlc.narg(f_country)::text IS NULL OR bool_or(country = sqlc.narg(f_country)))
+     AND (sqlc.narg(f_browser)::text IS NULL OR bool_or(browser = sqlc.narg(f_browser)))
+     AND (sqlc.narg(f_os)::text IS NULL OR bool_or(os = sqlc.narg(f_os)))
+     AND (sqlc.narg(f_device)::text IS NULL OR bool_or(device = sqlc.narg(f_device)))
 )
 SELECT
   count(*)::bigint                                              AS visits,
@@ -45,6 +60,12 @@ LEFT JOIN events_raw e
  AND e.name = 'pageview'
  AND e.ts >= b.bucket
  AND e.ts <  b.bucket + interval '1 hour'
+ AND (sqlc.narg(f_page)::text IS NULL OR e.pathname = sqlc.narg(f_page))
+ AND (sqlc.narg(f_referrer)::text IS NULL OR e.referrer = sqlc.narg(f_referrer))
+ AND (sqlc.narg(f_country)::text IS NULL OR e.country = sqlc.narg(f_country))
+ AND (sqlc.narg(f_browser)::text IS NULL OR e.browser = sqlc.narg(f_browser))
+ AND (sqlc.narg(f_os)::text IS NULL OR e.os = sqlc.narg(f_os))
+ AND (sqlc.narg(f_device)::text IS NULL OR e.device = sqlc.narg(f_device))
 GROUP BY b.bucket
 ORDER BY b.bucket;
 
@@ -63,6 +84,12 @@ LEFT JOIN events_raw e
  AND e.name = 'pageview'
  AND e.ts >= b.bucket
  AND e.ts <  b.bucket + interval '1 day'
+ AND (sqlc.narg(f_page)::text IS NULL OR e.pathname = sqlc.narg(f_page))
+ AND (sqlc.narg(f_referrer)::text IS NULL OR e.referrer = sqlc.narg(f_referrer))
+ AND (sqlc.narg(f_country)::text IS NULL OR e.country = sqlc.narg(f_country))
+ AND (sqlc.narg(f_browser)::text IS NULL OR e.browser = sqlc.narg(f_browser))
+ AND (sqlc.narg(f_os)::text IS NULL OR e.os = sqlc.narg(f_os))
+ AND (sqlc.narg(f_device)::text IS NULL OR e.device = sqlc.narg(f_device))
 GROUP BY b.bucket
 ORDER BY b.bucket;
 
@@ -75,6 +102,12 @@ FROM events_raw
 WHERE site_id = sqlc.arg(site_id)
   AND ts >= sqlc.arg(from_ts)
   AND ts <  sqlc.arg(to_ts)
+  AND (sqlc.narg(f_page)::text IS NULL OR pathname = sqlc.narg(f_page))
+  AND (sqlc.narg(f_referrer)::text IS NULL OR referrer = sqlc.narg(f_referrer))
+  AND (sqlc.narg(f_country)::text IS NULL OR country = sqlc.narg(f_country))
+  AND (sqlc.narg(f_browser)::text IS NULL OR browser = sqlc.narg(f_browser))
+  AND (sqlc.narg(f_os)::text IS NULL OR os = sqlc.narg(f_os))
+  AND (sqlc.narg(f_device)::text IS NULL OR device = sqlc.narg(f_device))
   AND name = 'pageview'
 GROUP BY pathname
 ORDER BY pageviews DESC, value ASC
@@ -89,6 +122,12 @@ FROM events_raw
 WHERE site_id = sqlc.arg(site_id)
   AND ts >= sqlc.arg(from_ts)
   AND ts <  sqlc.arg(to_ts)
+  AND (sqlc.narg(f_page)::text IS NULL OR pathname = sqlc.narg(f_page))
+  AND (sqlc.narg(f_referrer)::text IS NULL OR referrer = sqlc.narg(f_referrer))
+  AND (sqlc.narg(f_country)::text IS NULL OR country = sqlc.narg(f_country))
+  AND (sqlc.narg(f_browser)::text IS NULL OR browser = sqlc.narg(f_browser))
+  AND (sqlc.narg(f_os)::text IS NULL OR os = sqlc.narg(f_os))
+  AND (sqlc.narg(f_device)::text IS NULL OR device = sqlc.narg(f_device))
   AND name = 'pageview'
   AND referrer IS NOT NULL
 GROUP BY referrer
@@ -103,6 +142,12 @@ FROM events_raw
 WHERE site_id = sqlc.arg(site_id)
   AND ts >= sqlc.arg(from_ts)
   AND ts <  sqlc.arg(to_ts)
+  AND (sqlc.narg(f_page)::text IS NULL OR pathname = sqlc.narg(f_page))
+  AND (sqlc.narg(f_referrer)::text IS NULL OR referrer = sqlc.narg(f_referrer))
+  AND (sqlc.narg(f_country)::text IS NULL OR country = sqlc.narg(f_country))
+  AND (sqlc.narg(f_browser)::text IS NULL OR browser = sqlc.narg(f_browser))
+  AND (sqlc.narg(f_os)::text IS NULL OR os = sqlc.narg(f_os))
+  AND (sqlc.narg(f_device)::text IS NULL OR device = sqlc.narg(f_device))
   AND name <> 'pageview'
 GROUP BY name
 ORDER BY pageviews DESC, value ASC
@@ -117,6 +162,12 @@ FROM events_raw
 WHERE site_id = sqlc.arg(site_id)
   AND ts >= sqlc.arg(from_ts)
   AND ts <  sqlc.arg(to_ts)
+  AND (sqlc.narg(f_page)::text IS NULL OR pathname = sqlc.narg(f_page))
+  AND (sqlc.narg(f_referrer)::text IS NULL OR referrer = sqlc.narg(f_referrer))
+  AND (sqlc.narg(f_country)::text IS NULL OR country = sqlc.narg(f_country))
+  AND (sqlc.narg(f_browser)::text IS NULL OR browser = sqlc.narg(f_browser))
+  AND (sqlc.narg(f_os)::text IS NULL OR os = sqlc.narg(f_os))
+  AND (sqlc.narg(f_device)::text IS NULL OR device = sqlc.narg(f_device))
   AND name = 'pageview'
   AND country IS NOT NULL
 GROUP BY country
@@ -132,6 +183,12 @@ FROM events_raw
 WHERE site_id = sqlc.arg(site_id)
   AND ts >= sqlc.arg(from_ts)
   AND ts <  sqlc.arg(to_ts)
+  AND (sqlc.narg(f_page)::text IS NULL OR pathname = sqlc.narg(f_page))
+  AND (sqlc.narg(f_referrer)::text IS NULL OR referrer = sqlc.narg(f_referrer))
+  AND (sqlc.narg(f_country)::text IS NULL OR country = sqlc.narg(f_country))
+  AND (sqlc.narg(f_browser)::text IS NULL OR browser = sqlc.narg(f_browser))
+  AND (sqlc.narg(f_os)::text IS NULL OR os = sqlc.narg(f_os))
+  AND (sqlc.narg(f_device)::text IS NULL OR device = sqlc.narg(f_device))
   AND name = 'pageview'
   AND browser IS NOT NULL AND browser <> ''
 GROUP BY browser
@@ -147,6 +204,12 @@ FROM events_raw
 WHERE site_id = sqlc.arg(site_id)
   AND ts >= sqlc.arg(from_ts)
   AND ts <  sqlc.arg(to_ts)
+  AND (sqlc.narg(f_page)::text IS NULL OR pathname = sqlc.narg(f_page))
+  AND (sqlc.narg(f_referrer)::text IS NULL OR referrer = sqlc.narg(f_referrer))
+  AND (sqlc.narg(f_country)::text IS NULL OR country = sqlc.narg(f_country))
+  AND (sqlc.narg(f_browser)::text IS NULL OR browser = sqlc.narg(f_browser))
+  AND (sqlc.narg(f_os)::text IS NULL OR os = sqlc.narg(f_os))
+  AND (sqlc.narg(f_device)::text IS NULL OR device = sqlc.narg(f_device))
   AND name = 'pageview'
   AND os IS NOT NULL AND os <> ''
 GROUP BY os
@@ -162,8 +225,21 @@ FROM events_raw
 WHERE site_id = sqlc.arg(site_id)
   AND ts >= sqlc.arg(from_ts)
   AND ts <  sqlc.arg(to_ts)
+  AND (sqlc.narg(f_page)::text IS NULL OR pathname = sqlc.narg(f_page))
+  AND (sqlc.narg(f_referrer)::text IS NULL OR referrer = sqlc.narg(f_referrer))
+  AND (sqlc.narg(f_country)::text IS NULL OR country = sqlc.narg(f_country))
+  AND (sqlc.narg(f_browser)::text IS NULL OR browser = sqlc.narg(f_browser))
+  AND (sqlc.narg(f_os)::text IS NULL OR os = sqlc.narg(f_os))
+  AND (sqlc.narg(f_device)::text IS NULL OR device = sqlc.narg(f_device))
   AND name = 'pageview'
   AND device IS NOT NULL AND device <> ''
 GROUP BY device
 ORDER BY pageviews DESC, value ASC
 LIMIT sqlc.arg(row_limit);
+
+-- name: StatsRealtime :one
+-- Distinct visitors with any event in the last five minutes.
+SELECT count(DISTINCT visitor_id)::bigint AS visitors
+FROM events_raw
+WHERE site_id = sqlc.arg(site_id)
+  AND ts >= now() - interval '5 minutes';

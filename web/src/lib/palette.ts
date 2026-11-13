@@ -1,13 +1,14 @@
-// Categorical slots 1 and 2 from the validated default palette. Validated for
-// the light surface: CVD dE 24.7, normal-vision dE 33.6, both above 3:1 contrast.
-// Colour follows the entity, so visitors stay blue and pageviews stay orange
+// Series colours resolve through CSS variables (index.css) so they switch
+// with the colour scheme. Light: #2a78d6 / #eb6834; dark: #3987e5 / #d95926 -
+// each pair validated (CVD, normal-vision, contrast) against its own surface.
+// Colour follows the entity: visitors stay blue and pageviews orange
 // everywhere they appear - chart, legend, stat tiles.
 export const SERIES = {
-  visitors: '#2a78d6',
-  pageviews: '#eb6834',
+  visitors: 'var(--series-visitors)',
+  pageviews: 'var(--series-pageviews)',
 } as const
 
-// One-step-off-surface gray for hairline grid and axis rules.
-export const GRID = '#e4e4e7'
-export const AXIS_TEXT = '#71717b'
-export const SURFACE = '#ffffff'
+// Hairline grid and recessive axis text.
+export const GRID = 'var(--chart-grid)'
+export const AXIS_TEXT = 'var(--chart-axis)'
+export const SURFACE = 'var(--color-white)'

@@ -53,9 +53,21 @@ func NewRouter(d Deps) http.Handler {
 		r.Get("/api/sites/{id}", api.handleGetSite)
 		r.Patch("/api/sites/{id}", api.handlePatchSite)
 		r.Delete("/api/sites/{id}", api.handleDeleteSite)
-		r.Get("/api/sites/{id}/summary", api.handleSiteSummary)
-		r.Get("/api/sites/{id}/timeseries", api.handleSiteTimeseries)
-		r.Get("/api/sites/{id}/breakdown", api.handleSiteBreakdown)
+		r.Get("/api/sites/{id}/summary", api.summaryHandler(api.loadSiteForOwner))
+		r.Get("/api/sites/{id}/timeseries", api.timeseriesHandler(api.loadSiteForOwner))
+		r.Get("/api/sites/{id}/breakdown", api.breakdownHandler(api.loadSiteForOwner))
+		r.Get("/api/sites/{id}/realtime", api.realtimeHandler(api.loadSiteForOwner))
+		r.Post("/api/sites/{id}/share", api.handleEnableShare)
+		r.Delete("/api/sites/{id}/share", api.handleDisableShare)
+	})
+
+	// Shared dashboards: read-only, no session. The slug is the credential.
+	r.Route("/api/public/{slug}", func(r chi.Router) {
+		r.Get("/", api.handlePublicSite)
+		r.Get("/summary", api.summaryHandler(api.loadSiteBySlug))
+		r.Get("/timeseries", api.timeseriesHandler(api.loadSiteBySlug))
+		r.Get("/breakdown", api.breakdownHandler(api.loadSiteBySlug))
+		r.Get("/realtime", api.realtimeHandler(api.loadSiteBySlug))
 	})
 
 	return r

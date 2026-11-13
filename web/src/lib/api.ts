@@ -49,9 +49,7 @@ export const api = {
 
 export type User = { id: number; email: string; created_at: string }
 export type Site = { id: number; domain: string; public_slug: string | null; created_at: string }
-export type Summary = {
-  from: string
-  to: string
+export type SummaryMetrics = {
   pageviews: number
   visitors: number
   visits: number
@@ -60,6 +58,15 @@ export type Summary = {
   /** Mean visit length in seconds. */
   visit_duration: number
 }
+export type Summary = SummaryMetrics & {
+  from: string
+  to: string
+  /** Same-length window just before `from`; null when it can't be answered. */
+  previous: SummaryMetrics | null
+}
+export type Realtime = { visitors: number }
+/** What GET /api/public/{slug} reveals about a shared site. */
+export type PublicSite = { domain: string }
 export type TimeseriesPoint = { bucket: string; pageviews: number; visitors: number }
 export type Timeseries = { interval: string; points: TimeseriesPoint[] }
 export type BreakdownRow = { value: string; pageviews: number; visitors: number }

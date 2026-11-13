@@ -175,7 +175,10 @@ func (s Summary) AvgDuration() float64 {
 
 // Summary totals a range. Over rollups, visitors is the sum of daily
 // uniques: visitor IDs rotate daily, so that is the only honest number.
-func (s *Service) Summary(ctx context.Context, siteID int64, r Range) (Summary, error) {
+func (s *Service) Summary(ctx context.Context, siteID int64, r Range, f Filters) (Summary, error) {
+	if f.Active() {
+		return s.rawSummary(ctx, siteID, r, f)
+	}
 	p, err := s.planDaily(ctx, r)
 	if err != nil {
 		return Summary{}, err
@@ -194,7 +197,7 @@ func (s *Service) Summary(ctx context.Context, siteID int64, r Range) (Summary, 
 		}
 	}
 	if !p.rawEmpty {
-		raw, err := s.rawSummary(ctx, siteID, p.raw)
+		raw, err := s.rawSummary(ctx, siteID, p.raw, f)
 		if err != nil {
 			return Summary{}, err
 		}
@@ -207,19 +210,19 @@ func (s *Service) Summary(ctx context.Context, siteID int64, r Range) (Summary, 
 	return out, nil
 }
 
-func (s *Service) rawSummary(ctx context.Context, siteID int64, r Range) (Summary, error) {
+func (s *Service) rawSummary(ctx context.Context, siteID int64, r Range, f Filters) (Summary, error) {
 	row, err := s.Q.StatsSummary(ctx, store.StatsSummaryParams{
-		SiteID: siteID,
-		FromTs: r.From,
-		ToTs:   r.To,
+		SiteID: siteID, FromTs: r.From, ToTs: r.To,
+		FPage: f.Page, FReferrer: f.Referrer, FCountry: f.Country,
+		FBrowser: f.Browser, FOs: f.OS, FDevice: f.Device,
 	})
 	if err != nil {
 		return Summary{}, err
 	}
 	sess, err := s.Q.StatsSessions(ctx, store.StatsSessionsParams{
-		SiteID: siteID,
-		FromTs: r.From,
-		ToTs:   r.To,
+		SiteID: siteID, FromTs: r.From, ToTs: r.To,
+		FPage: f.Page, FReferrer: f.Referrer, FCountry: f.Country,
+		FBrowser: f.Browser, FOs: f.OS, FDevice: f.Device,
 	})
 	if err != nil {
 		return Summary{}, err
@@ -239,7 +242,10 @@ type Point struct {
 	Visitors  int64
 }
 
-func (s *Service) Timeseries(ctx context.Context, siteID int64, r Range, interval Interval) ([]Point, error) {
+func (s *Service) Timeseries(ctx context.Context, siteID int64, r Range, interval Interval, f Filters) ([]Point, error) {
+	if f.Active() {
+		return s.rawSeries(ctx, siteID, r, interval, f)
+	}
 	if interval == IntervalDay {
 		return s.dailySeries(ctx, siteID, r)
 	}
@@ -271,7 +277,7 @@ func (s *Service) dailySeries(ctx context.Context, siteID int64, r Range) ([]Poi
 		}
 	}
 	if !p.rawEmpty {
-		raw, err := s.rawSeries(ctx, siteID, p.raw, IntervalDay)
+		raw, err := s.rawSeries(ctx, siteID, p.raw, IntervalDay, Filters{})
 		if err != nil {
 			return nil, err
 		}
@@ -303,7 +309,7 @@ func (s *Service) hourlySeries(ctx context.Context, siteID int64, r Range) ([]Po
 		}
 	}
 	if !p.rawEmpty {
-		raw, err := s.rawSeries(ctx, siteID, p.raw, IntervalHour)
+		raw, err := s.rawSeries(ctx, siteID, p.raw, IntervalHour, Filters{})
 		if err != nil {
 			return nil, err
 		}
@@ -312,32 +318,28 @@ func (s *Service) hourlySeries(ctx context.Context, siteID int64, r Range) ([]Po
 	return out, nil
 }
 
-func (s *Service) rawSeries(ctx context.Context, siteID int64, r Range, interval Interval) ([]Point, error) {
+func (s *Service) rawSeries(ctx context.Context, siteID int64, r Range, interval Interval, f Filters) ([]Point, error) {
+	// Both queries take identical parameters and return identical rows, so
+	// one params value converts to the other.
+	p := store.StatsTimeseriesHourlyParams{
+		FromTs: r.From, ToTs: r.To, Tz: s.Timezone, SiteID: siteID,
+		FPage: f.Page, FReferrer: f.Referrer, FCountry: f.Country,
+		FBrowser: f.Browser, FOs: f.OS, FDevice: f.Device,
+	}
+	var rows []store.StatsTimeseriesHourlyRow
 	if interval == IntervalDay {
-		rows, err := s.Q.StatsTimeseriesDaily(ctx, store.StatsTimeseriesDailyParams{
-			SiteID: siteID,
-			FromTs: r.From,
-			ToTs:   r.To,
-			Tz:     s.Timezone,
-		})
+		daily, err := s.Q.StatsTimeseriesDaily(ctx, store.StatsTimeseriesDailyParams(p))
 		if err != nil {
 			return nil, err
 		}
-		out := make([]Point, 0, len(rows))
-		for _, row := range rows {
-			out = append(out, Point{Bucket: row.Bucket, Pageviews: row.Pageviews, Visitors: row.Visitors})
+		for _, d := range daily {
+			rows = append(rows, store.StatsTimeseriesHourlyRow(d))
 		}
-		return out, nil
-	}
-
-	rows, err := s.Q.StatsTimeseriesHourly(ctx, store.StatsTimeseriesHourlyParams{
-		SiteID: siteID,
-		FromTs: r.From,
-		ToTs:   r.To,
-		Tz:     s.Timezone,
-	})
-	if err != nil {
-		return nil, err
+	} else {
+		var err error
+		if rows, err = s.Q.StatsTimeseriesHourly(ctx, p); err != nil {
+			return nil, err
+		}
 	}
 	out := make([]Point, 0, len(rows))
 	for _, row := range rows {
@@ -354,13 +356,16 @@ type BreakdownRow struct {
 
 // Breakdown lists the top values of a dimension. Over rollups, values that
 // fell outside a day's top 50 appear as a single "(other)" row.
-func (s *Service) Breakdown(ctx context.Context, siteID int64, r Range, dim Dimension, limit int32) ([]BreakdownRow, error) {
+func (s *Service) Breakdown(ctx context.Context, siteID int64, r Range, dim Dimension, limit int32, f Filters) ([]BreakdownRow, error) {
+	if f.Active() {
+		return s.rawBreakdown(ctx, siteID, r, dim, limit, f)
+	}
 	p, err := s.planDaily(ctx, r)
 	if err != nil {
 		return nil, err
 	}
 	if !p.hasRollup() {
-		return s.rawBreakdown(ctx, siteID, p.raw, dim, limit)
+		return s.rawBreakdown(ctx, siteID, p.raw, dim, limit, f)
 	}
 
 	merged := make(map[string]*BreakdownRow)
@@ -384,7 +389,7 @@ func (s *Service) Breakdown(ctx context.Context, siteID int64, r Range, dim Dime
 		add(row.Value, row.Pageviews, row.Visitors)
 	}
 	if !p.rawEmpty {
-		raw, err := s.rawBreakdown(ctx, siteID, p.raw, dim, MaxBreakdownLimit)
+		raw, err := s.rawBreakdown(ctx, siteID, p.raw, dim, MaxBreakdownLimit, f)
 		if err != nil {
 			return nil, err
 		}
@@ -409,98 +414,92 @@ func (s *Service) Breakdown(ctx context.Context, siteID int64, r Range, dim Dime
 	return out, nil
 }
 
-func (s *Service) rawBreakdown(ctx context.Context, siteID int64, r Range, dim Dimension, limit int32) ([]BreakdownRow, error) {
+func (s *Service) rawBreakdown(ctx context.Context, siteID int64, r Range, dim Dimension, limit int32, f Filters) ([]BreakdownRow, error) {
+	// Every breakdown query has the same parameter and row shape; build one
+	// params value and convert it per query.
+	p := store.StatsBreakdownPagesParams{
+		SiteID: siteID, FromTs: r.From, ToTs: r.To, RowLimit: limit,
+		FPage: f.Page, FReferrer: f.Referrer, FCountry: f.Country,
+		FBrowser: f.Browser, FOs: f.OS, FDevice: f.Device,
+	}
+	var (
+		rows []store.StatsBreakdownPagesRow
+		err  error
+	)
 	switch dim {
 	case DimensionPage:
-		rows, err := s.Q.StatsBreakdownPages(ctx, store.StatsBreakdownPagesParams{
-			SiteID: siteID, FromTs: r.From, ToTs: r.To, RowLimit: limit,
-		})
-		if err != nil {
-			return nil, err
-		}
-		out := make([]BreakdownRow, 0, len(rows))
-		for _, row := range rows {
-			out = append(out, BreakdownRow{Value: row.Value, Pageviews: row.Pageviews, Visitors: row.Visitors})
-		}
-		return out, nil
-
+		rows, err = s.Q.StatsBreakdownPages(ctx, p)
 	case DimensionEvent:
-		rows, err := s.Q.StatsBreakdownEvents(ctx, store.StatsBreakdownEventsParams{
-			SiteID: siteID, FromTs: r.From, ToTs: r.To, RowLimit: limit,
-		})
-		if err != nil {
-			return nil, err
-		}
-		out := make([]BreakdownRow, 0, len(rows))
-		for _, row := range rows {
-			out = append(out, BreakdownRow{Value: row.Value, Pageviews: row.Pageviews, Visitors: row.Visitors})
-		}
-		return out, nil
-
+		rows, err = convertRows(s.Q.StatsBreakdownEvents(ctx, store.StatsBreakdownEventsParams(p)))
 	case DimensionReferrer:
-		rows, err := s.Q.StatsBreakdownReferrers(ctx, store.StatsBreakdownReferrersParams{
-			SiteID: siteID, FromTs: r.From, ToTs: r.To, RowLimit: limit,
-		})
-		if err != nil {
-			return nil, err
-		}
-		out := make([]BreakdownRow, 0, len(rows))
-		for _, row := range rows {
-			out = append(out, BreakdownRow{Value: row.Value, Pageviews: row.Pageviews, Visitors: row.Visitors})
-		}
-		return out, nil
-
+		rows, err = convertRows(s.Q.StatsBreakdownReferrers(ctx, store.StatsBreakdownReferrersParams(p)))
 	case DimensionCountry:
-		rows, err := s.Q.StatsBreakdownCountries(ctx, store.StatsBreakdownCountriesParams{
-			SiteID: siteID, FromTs: r.From, ToTs: r.To, RowLimit: limit,
-		})
-		if err != nil {
-			return nil, err
-		}
-		out := make([]BreakdownRow, 0, len(rows))
-		for _, row := range rows {
-			out = append(out, BreakdownRow{Value: row.Value, Pageviews: row.Pageviews, Visitors: row.Visitors})
-		}
-		return out, nil
-
+		rows, err = convertRows(s.Q.StatsBreakdownCountries(ctx, store.StatsBreakdownCountriesParams(p)))
 	case DimensionBrowser:
-		rows, err := s.Q.StatsBreakdownBrowsers(ctx, store.StatsBreakdownBrowsersParams{
-			SiteID: siteID, FromTs: r.From, ToTs: r.To, RowLimit: limit,
-		})
-		if err != nil {
-			return nil, err
-		}
-		out := make([]BreakdownRow, 0, len(rows))
-		for _, row := range rows {
-			out = append(out, BreakdownRow{Value: row.Value, Pageviews: row.Pageviews, Visitors: row.Visitors})
-		}
-		return out, nil
-
+		rows, err = convertRows(s.Q.StatsBreakdownBrowsers(ctx, store.StatsBreakdownBrowsersParams(p)))
 	case DimensionOS:
-		rows, err := s.Q.StatsBreakdownOS(ctx, store.StatsBreakdownOSParams{
-			SiteID: siteID, FromTs: r.From, ToTs: r.To, RowLimit: limit,
-		})
-		if err != nil {
-			return nil, err
-		}
-		out := make([]BreakdownRow, 0, len(rows))
-		for _, row := range rows {
-			out = append(out, BreakdownRow{Value: row.Value, Pageviews: row.Pageviews, Visitors: row.Visitors})
-		}
-		return out, nil
-
+		rows, err = convertRows(s.Q.StatsBreakdownOS(ctx, store.StatsBreakdownOSParams(p)))
 	case DimensionDevice:
-		rows, err := s.Q.StatsBreakdownDevices(ctx, store.StatsBreakdownDevicesParams{
-			SiteID: siteID, FromTs: r.From, ToTs: r.To, RowLimit: limit,
-		})
-		if err != nil {
-			return nil, err
-		}
-		out := make([]BreakdownRow, 0, len(rows))
-		for _, row := range rows {
-			out = append(out, BreakdownRow{Value: row.Value, Pageviews: row.Pageviews, Visitors: row.Visitors})
-		}
-		return out, nil
+		rows, err = convertRows(s.Q.StatsBreakdownDevices(ctx, store.StatsBreakdownDevicesParams(p)))
+	default:
+		return nil, errors.New("unknown dimension")
 	}
-	return nil, errors.New("unknown dimension")
+	if err != nil {
+		return nil, err
+	}
+	out := make([]BreakdownRow, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, BreakdownRow{Value: row.Value, Pageviews: row.Pageviews, Visitors: row.Visitors})
+	}
+	return out, nil
+}
+
+// breakdownRow is satisfied by every generated breakdown row type, which all
+// share the pages row's layout.
+type breakdownRow interface {
+	store.StatsBreakdownEventsRow | store.StatsBreakdownReferrersRow | store.StatsBreakdownCountriesRow |
+		store.StatsBreakdownBrowsersRow | store.StatsBreakdownOSRow | store.StatsBreakdownDevicesRow
+}
+
+func convertRows[R breakdownRow](rows []R, err error) ([]store.StatsBreakdownPagesRow, error) {
+	if err != nil {
+		return nil, err
+	}
+	out := make([]store.StatsBreakdownPagesRow, len(rows))
+	for i, r := range rows {
+		out[i] = store.StatsBreakdownPagesRow(r)
+	}
+	return out, nil
+}
+
+// Filters narrow raw queries to events matching every set field. They only
+// apply to the raw window: rollups store each dimension on its own, so they
+// cannot answer "pages, for visitors from Germany".
+type Filters struct {
+	Page, Referrer, Country, Browser, OS, Device sql.NullString
+}
+
+// FilterKeys are the query parameters ParseFilters reads, in display order.
+var FilterKeys = []string{"page", "referrer", "country", "browser", "os", "device"}
+
+// ParseFilters reads filters from a lookup such as url.Values.Get.
+func ParseFilters(get func(string) string) Filters {
+	ns := func(k string) sql.NullString {
+		v := get(k)
+		return sql.NullString{String: v, Valid: v != ""}
+	}
+	return Filters{
+		Page: ns("page"), Referrer: ns("referrer"), Country: ns("country"),
+		Browser: ns("browser"), OS: ns("os"), Device: ns("device"),
+	}
+}
+
+// Active reports whether any filter is set.
+func (f Filters) Active() bool {
+	return f.Page.Valid || f.Referrer.Valid || f.Country.Valid || f.Browser.Valid || f.OS.Valid || f.Device.Valid
+}
+
+// Realtime counts distinct visitors seen in the last five minutes.
+func (s *Service) Realtime(ctx context.Context, siteID int64) (int64, error) {
+	return s.Q.StatsRealtime(ctx, siteID)
 }

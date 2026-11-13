@@ -47,6 +47,17 @@
   }
   addEventListener('popstate', function () { send(); });
 
-  window.kestrel = { track: send };
+  // Calls made before this script loaded are queued by the snippet stub
+  // (window.kestrel = window.kestrel || {q: [], track: function () {
+  //   this.q.push(arguments) }}) and replayed after the first pageview.
+  var queued = (window.kestrel && window.kestrel.q) || [];
+  window.kestrel = {
+    track: function (name, props) {
+      if (name) send(String(name), props);
+    }
+  };
   send();
+  for (var i = 0; i < queued.length; i++) {
+    window.kestrel.track(queued[i][0], queued[i][1]);
+  }
 })();
