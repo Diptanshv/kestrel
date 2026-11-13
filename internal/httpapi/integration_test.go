@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/Diptanshv/kestrel/internal/config"
+	"github.com/Diptanshv/kestrel/internal/enrich"
 	"github.com/Diptanshv/kestrel/internal/httpapi"
 	"github.com/Diptanshv/kestrel/internal/store"
 	"github.com/Diptanshv/kestrel/internal/testdb"
@@ -63,7 +64,8 @@ func newTestServer(t *testing.T) (*httptest.Server, *url.URL) {
 	testdb.Reset(t, integrationDB)
 	logger := slog.New(slog.DiscardHandler)
 	q := store.New(integrationDB)
-	srv := httptest.NewServer(httpapi.NewRouter(logger, q, integrationCfg))
+	enricher := enrich.New(enrich.NewSaltStore(q), &enrich.Geo{})
+	srv := httptest.NewServer(httpapi.NewRouter(logger, q, integrationCfg, enricher))
 	base, err := url.Parse(srv.URL)
 	if err != nil {
 		srv.Close()

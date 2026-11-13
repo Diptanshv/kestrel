@@ -25,6 +25,11 @@ type EventsRaw struct {
 	Device    sql.NullString
 }
 
+type Salt struct {
+	Day  time.Time
+	Salt []byte
+}
+
 type Session struct {
 	ID        int64
 	UserID    int64

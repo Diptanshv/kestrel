@@ -8,6 +8,7 @@ import { Shell } from '../components/Shell'
 import { StatTile } from '../components/StatTile'
 import { TrafficChart, type ChartDatum } from '../components/TrafficChart'
 import { BreakdownCard } from '../components/BreakdownCard'
+import { TabbedBreakdown } from '../components/TabbedBreakdown'
 import { ErrorNote, Skeleton, WaitingForData } from '../components/ui'
 
 function RangePicker({ value, onChange }: { value: RangeKey; onChange: (k: RangeKey) => void }) {
@@ -156,6 +157,29 @@ export default function Dashboard() {
             />
           </div>
 
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <TabbedBreakdown
+              base={base}
+              params={params}
+              queryKey={['breakdown', id, range]}
+              title="Audience"
+              tabs={[
+                { dimension: 'country', label: 'Countries', valueLabel: 'Country', emptyLabel: 'No country data in this range.' },
+                { dimension: 'device', label: 'Devices', valueLabel: 'Device', emptyLabel: 'No device data in this range.' },
+              ]}
+            />
+            <TabbedBreakdown
+              base={base}
+              params={params}
+              queryKey={['breakdown', id, range]}
+              title="Technology"
+              tabs={[
+                { dimension: 'browser', label: 'Browsers', valueLabel: 'Browser', emptyLabel: 'No browser data in this range.' },
+                { dimension: 'os', label: 'Operating systems', valueLabel: 'OS', emptyLabel: 'No OS data in this range.' },
+              ]}
+            />
+          </div>
+
           <div className="mt-4">
             <BreakdownCard
               title="Custom events"
@@ -170,8 +194,9 @@ export default function Dashboard() {
 
           <p className="mt-6 text-xs leading-relaxed text-zinc-500">
             Visitors and pageviews count page loads only; custom events are listed separately.
-            Times are IST (UTC+5:30). Bounce rate and visit duration need session tracking; countries,
-            browsers and devices need enrichment.
+            Times are IST (UTC+5:30). Unique visitors are counted per day and summed, so someone
+            visiting on two days counts twice — that is the cost of not using cookies.
+            Bounce rate and visit duration need session tracking.
           </p>
         </>
       )}
