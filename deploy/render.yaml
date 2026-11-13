@@ -1,0 +1,26 @@
+# Render blueprint for the API. Copy to the repo root (render.yaml) or point
+# Render at this file. Secrets marked sync: false are entered in the Render
+# dashboard, never committed.
+services:
+  - type: web
+    name: kestrel-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    autoDeploy: false # deploys come from CI after tests pass (deploy hook)
+    envVars:
+      - key: DATABASE_URL # Neon direct (non-pooled) URL, sslmode=require
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: ROLLUP_SECRET
+        sync: false # same value as the GitHub Actions secret
+      - key: METRICS_TOKEN
+        generateValue: true
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: TIMEZONE
+        value: Asia/Kolkata
+      - key: TRUSTED_PROXY_HOPS
+        value: "2" # Netlify proxy + Render's load balancer

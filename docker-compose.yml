@@ -16,5 +16,28 @@ services:
       timeout: 5s
       retries: 10
 
+  # `docker compose up` runs the whole stack; `make up` starts only the db
+  # for local development with `make run` and `make web-dev`.
+  api:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://pulse:pulse@db:5432/pulse?sslmode=disable
+      SESSION_SECRET: local-compose-secret-change-me
+      TIMEZONE: Asia/Kolkata
+      ENABLE_DEMO: "true"
+      TRUSTED_PROXY_HOPS: "1" # nginx in the web service
+    ports:
+      - "8080:8080"
+
+  web:
+    build: ./web
+    depends_on:
+      - api
+    ports:
+      - "3000:80"
+
 volumes:
   pulse_pgdata:
