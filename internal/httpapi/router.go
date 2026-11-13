@@ -1,27 +1,37 @@
 package httpapi
 
 import (
-	"log/slog"
 	"net/http"
 
-	"github.com/Diptanshv/kestrel/internal/config"
 	"github.com/Diptanshv/kestrel/internal/stats"
-	"github.com/Diptanshv/kestrel/internal/store"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-func NewRouter(logger *slog.Logger, queries *store.Queries, cfg config.Config) http.Handler {
-	api := &API{Log: logger, Q: queries, Config: cfg, Stats: stats.New(queries, cfg.Timezone)}
+func NewRouter(d Deps) http.Handler {
+	api := &API{
+		Log:    d.Log,
+		Q:      d.Queries,
+		Config: d.Config,
+		Stats:  stats.New(d.Queries, d.Config.Timezone),
+		Enrich: d.Enrich,
+		Sink:   d.Sink,
+		Rollup: d.Rollup,
+		sites:  newSiteCache(d.Queries),
+	}
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Recoverer)
-	r.Use(requestLogger(logger))
+	r.Use(requestLogger(d.Log))
+	r.Use(observeDuration)
 
 	r.Get("/healthz", handleHealthz)
+	r.Handle("/metrics", promhttp.Handler())
 	r.Get("/script.js", handleScript)
 	r.Get("/demo.html", api.handleDemo)
+	r.Post("/internal/rollup", api.handleRollup)
 	r.Post("/api/auth/register", api.handleRegister)
 	r.Post("/api/auth/login", api.handleLogin)
 

@@ -6,16 +6,14 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Diptanshv/kestrel/internal/batch"
 	"github.com/Diptanshv/kestrel/internal/ingest"
-	"github.com/Diptanshv/kestrel/internal/store"
+	"github.com/Diptanshv/kestrel/internal/metrics"
 )
 
-// unassignedSession is written to events_raw.session_id until Phase 5 adds the
-// in-memory session tracker. The column is NOT NULL and has no table behind it.
-const unassignedSession int64 = 0
-
-// handleEvent inserts synchronously, on purpose. Phase 6 replaces this with a
-// buffered channel and a batcher, and benchmarks the two against each other.
+// handleEvent validates and enriches in the request, then hands the row to the
+// sink and returns. No database write happens on this path; the batcher
+// flushes within FlushInterval.
 func (api *API) handleEvent(w http.ResponseWriter, r *http.Request) {
 	var p ingest.Payload
 	if err := decodeJSON(w, r, &p); err != nil {
@@ -29,7 +27,7 @@ func (api *API) handleEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	site, err := api.Q.GetSiteByDomain(r.Context(), ev.Domain)
+	site, err := api.sites.get(r.Context(), ev.Domain)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			_ = writeError(w, http.StatusNotFound, "not_found", "unknown site")
@@ -45,25 +43,43 @@ func (api *API) handleEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = api.Q.CreateEventRaw(r.Context(), store.CreateEventRawParams{
+	f, err := api.Enrich.Enrich(r.Context(), site.ID, ingest.ClientIP(r), r.UserAgent(), time.Now())
+	if err != nil {
+		api.Log.Error("enrich event", "err", err)
+		_ = writeError(w, http.StatusInternalServerError, "internal_server_error", "failed to record event")
+		return
+	}
+	if f.Bot {
+		metrics.EventsDropped.WithLabelValues(metrics.DropBot).Inc()
+		// Accepted and dropped. A 4xx would tell the bot it was recognised, and
+		// this is not the client's error anyway.
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+
+	// The UA is authoritative for device; the tracker's viewport width is the
+	// fallback for user agents the parser does not classify.
+	device := f.Device
+	if device == "" {
+		device = ev.Device
+	}
+
+	// A full buffer still answers 202: the tracker cannot do anything useful
+	// with an error, and the drop is counted in events_dropped_total.
+	api.Sink.Enqueue(batch.Event{
 		SiteID:    site.ID,
 		Ts:        time.Now().UTC(),
-		VisitorID: ingest.VisitorID(site.ID, ingest.ClientIP(r), r.UserAgent()),
-		SessionID: unassignedSession,
+		VisitorID: f.VisitorID,
+		SessionID: f.SessionID,
 		Name:      ev.Name,
 		Pathname:  ev.Pathname,
 		Referrer:  nullString(ev.Referrer),
 		UtmSource: nullString(ev.UTMSource),
-		Country:   sql.NullString{}, // Phase 5: GeoIP
-		Browser:   sql.NullString{}, // Phase 5: UA parsing
-		Os:        sql.NullString{}, // Phase 5: UA parsing
-		Device:    nullString(ev.Device),
+		Country:   nullString(f.Country),
+		Browser:   nullString(f.Browser),
+		Os:        nullString(f.OS),
+		Device:    nullString(device),
 	})
-	if err != nil {
-		api.Log.Error("insert event", "err", err)
-		_ = writeError(w, http.StatusInternalServerError, "internal_server_error", "failed to record event")
-		return
-	}
 
 	w.WriteHeader(http.StatusAccepted)
 }
