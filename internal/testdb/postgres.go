@@ -70,7 +70,7 @@ func Reset(t *testing.T, db *sql.DB) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_, err := db.ExecContext(ctx, "TRUNCATE users RESTART IDENTITY CASCADE")
+	_, err := db.ExecContext(ctx, "TRUNCATE users, rollup_state, salts RESTART IDENTITY CASCADE")
 	if err != nil {
 		t.Fatalf("truncate users: %v", err)
 	}

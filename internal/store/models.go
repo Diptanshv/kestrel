@@ -25,6 +25,36 @@ type EventsRaw struct {
 	Device    sql.NullString
 }
 
+type RollupDaily struct {
+	SiteID      int64
+	Day         time.Time
+	Dimension   string
+	Value       string
+	Pageviews   int32
+	Visitors    int32
+	Visits      int32
+	Bounces     int32
+	DurationSum int64
+}
+
+type RollupHourly struct {
+	SiteID      int64
+	Bucket      time.Time
+	Dimension   string
+	Value       string
+	Pageviews   int32
+	Visitors    int32
+	Visits      int32
+	Bounces     int32
+	DurationSum int64
+}
+
+type RollupState struct {
+	ID            int32
+	HourlyThrough time.Time
+	DailyThrough  time.Time
+}
+
 type Salt struct {
 	Day  time.Time
 	Salt []byte

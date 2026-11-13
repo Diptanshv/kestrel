@@ -30,6 +30,11 @@ type Config struct {
 	IngestBufferSize    int
 	IngestBatchSize     int
 	IngestFlushInterval time.Duration
+
+	// RollupSecret guards POST /internal/rollup. Empty disables the endpoint;
+	// the in-process ticker runs either way.
+	RollupSecret   string
+	RollupInterval time.Duration
 }
 
 func Load() (Config, error) {
@@ -47,6 +52,9 @@ func Load() (Config, error) {
 		IngestBufferSize:    envOrInt("INGEST_BUFFER_SIZE", 10_000),
 		IngestBatchSize:     envOrInt("INGEST_BATCH_SIZE", 500),
 		IngestFlushInterval: envOrDuration("INGEST_FLUSH_INTERVAL", 2*time.Second),
+
+		RollupSecret:   os.Getenv("ROLLUP_SECRET"),
+		RollupInterval: envOrDuration("ROLLUP_INTERVAL", 15*time.Minute),
 	}
 	if c.DatabaseURL == "" {
 		return c, fmt.Errorf("DATABASE_URL is required")

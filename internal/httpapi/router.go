@@ -17,6 +17,7 @@ func NewRouter(d Deps) http.Handler {
 		Stats:  stats.New(d.Queries, d.Config.Timezone),
 		Enrich: d.Enrich,
 		Sink:   d.Sink,
+		Rollup: d.Rollup,
 		sites:  newSiteCache(d.Queries),
 	}
 
@@ -30,6 +31,7 @@ func NewRouter(d Deps) http.Handler {
 	r.Handle("/metrics", promhttp.Handler())
 	r.Get("/script.js", handleScript)
 	r.Get("/demo.html", api.handleDemo)
+	r.Post("/internal/rollup", api.handleRollup)
 	r.Post("/api/auth/register", api.handleRegister)
 	r.Post("/api/auth/login", api.handleLogin)
 

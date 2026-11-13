@@ -1,11 +1,13 @@
 package httpapi
 
 import (
+	"context"
 	"log/slog"
 
 	"github.com/Diptanshv/kestrel/internal/batch"
 	"github.com/Diptanshv/kestrel/internal/config"
 	"github.com/Diptanshv/kestrel/internal/enrich"
+	"github.com/Diptanshv/kestrel/internal/rollup"
 	"github.com/Diptanshv/kestrel/internal/stats"
 	"github.com/Diptanshv/kestrel/internal/store"
 )
@@ -24,6 +26,13 @@ type Deps struct {
 	Config  config.Config
 	Enrich  *enrich.Enricher
 	Sink    EventSink
+	// Rollup backs POST /internal/rollup. Nil disables the route.
+	Rollup RollupRunner
+}
+
+// RollupRunner is the slice of *rollup.Job the HTTP layer needs.
+type RollupRunner interface {
+	Run(ctx context.Context) (rollup.Result, error)
 }
 
 type API struct {
@@ -33,5 +42,6 @@ type API struct {
 	Stats  *stats.Service
 	Enrich *enrich.Enricher
 	Sink   EventSink
+	Rollup RollupRunner
 	sites  *siteCache
 }
