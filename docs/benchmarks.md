@@ -60,3 +60,49 @@ server and database on one machine. p99 is the figure to watch.
 - **A failed `COPY` drops the whole batch**
   (`events_dropped_total{reason="write_error"}`). Retrying would let a
   database outage back up into the request path.
+
+## Phase 9: HyperLogLog uniques
+
+### Error versus cardinality (sketch only)
+
+```
+KESTREL_BENCH=1 go test ./internal/hll -run TestAccuracyReport -v
+```
+
+Mean and worst absolute relative error over 20 trials per point. Size is the
+serialized sketch, which the encoder keeps sparse while sparse is smaller.
+
+| Distinct visitors | p=10 mean / max | p=12 mean / max | p=14 mean / max | p=12 size |
+|------------------:|----------------:|----------------:|----------------:|----------:|
+| 10 | 0.00% / 0.00% | 0.00% / 0.00% | 0.00% / 0.00% | 29 B |
+| 100 | 2.10% / 5.00% | 0.60% / 3.00% | 0.35% / 2.00% | 198 B |
+| 1,000 | 2.05% / 6.90% | 0.83% / 2.00% | 0.49% / 1.60% | 1,534 B |
+| 5,000 | 1.83% / 4.28% | 1.02% / 3.04% | 0.41% / 1.14% | 3,075 B |
+| 10,000 | 2.54% / 7.07% | 1.10% / 3.05% | 0.57% / 1.32% | 3,075 B |
+| 100,000 | 2.81% / 5.48% | 1.16% / 2.23% | 0.56% / 1.57% | 3,075 B |
+| 1,000,000 | 2.58% / 9.25% | 1.20% / 3.13% | 0.75% / 1.68% | 3,075 B |
+
+Dense sizes are 771 B (p=10), 3,075 B (p=12) and 12,291 B (p=14). Error
+stays flat from 100 to 1M visitors because Ertl's estimator has no
+small-range or large-range switchover to bias it.
+
+### Rollup uniques versus `COUNT(DISTINCT)`
+
+```
+KESTREL_BENCH=1 TEST_DATABASE_URL=... go test ./internal/rollup -run TestUniquesAccuracyReport -v
+```
+
+One synthetic day, two pageviews per visitor at random times. The daily row
+is built by merging 24 hourly sketches. It is compared with
+`count(DISTINCT visitor_id)` over the same raw rows.
+
+| Exact | HLL (daily row) | Error | Avg hourly `_total` sketch | Rollup run |
+|------:|----------------:|------:|---------------------------:|-----------:|
+| 100 | 98 | -2.00% | 24 B | 20 ms |
+| 1,000 | 1,007 | +0.70% | 163 B | 24 ms |
+| 10,000 | 9,900 | -1.00% | 1,308 B | 138 ms |
+| 50,000 | 49,400 | -1.20% | 3,075 B | 623 ms |
+| 100,000 | 100,850 | +0.85% | 3,075 B | 1,182 ms |
+
+Merging 24 hourly p=12 sketches and estimating takes 0.44 ms
+(`BenchmarkMerge24Hourly`). Adding a visitor takes 6 ns (`BenchmarkAdd`).

@@ -132,21 +132,15 @@ func (j *Job) run(ctx context.Context) (Result, error) {
 	res.HourlyFrom, res.HourlyTo = hourFrom, hourTo
 	res.DailyFrom, res.DailyTo = dayFrom.Format(time.DateOnly), dayTo.Format(time.DateOnly)
 
-	loadFrom := hourFrom
-	if dayFrom.Before(loadFrom) {
-		loadFrom = dayFrom
-	}
 	events, err := j.Q.ListEventsForRollup(ctx, store.ListEventsForRollupParams{
-		FromTs: loadFrom.Add(-cfg.SessionLookback),
+		FromTs: hourFrom.Add(-cfg.SessionLookback),
 		ToTs:   now,
 	})
 	if err != nil {
 		return res, fmt.Errorf("load events: %w", err)
 	}
-
 	hourly := capValues(aggregate(events, func(t time.Time) time.Time { return TruncHour(t, cfg.Loc) }, hourFrom, hourTo), cfg.TopN)
-	daily := capValues(aggregate(events, func(t time.Time) time.Time { return TruncDay(t, cfg.Loc) }, dayFrom, dayTo), cfg.TopN)
-	res.HourlyRows, res.DailyRows = len(hourly), len(daily)
+	res.HourlyRows = len(hourly)
 
 	tx, err := j.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -159,10 +153,27 @@ func (j *Job) run(ctx context.Context) (Result, error) {
 		return res, fmt.Errorf("clear hourly: %w", err)
 	}
 	if len(hourly) > 0 {
-		if err := q.UpsertRollupHourly(ctx, hourlyParams(hourly)); err != nil {
+		params, err := hourlyParams(hourly)
+		if err != nil {
+			return res, err
+		}
+		if err := q.UpsertRollupHourly(ctx, params); err != nil {
 			return res, fmt.Errorf("upsert hourly: %w", err)
 		}
 	}
+	// Days are rebuilt from the hourly rows just written, inside the same
+	// transaction, so a re-rolled hour flows straight into its day.
+	hourRows, err := q.ListRollupHourlyRange(ctx, store.ListRollupHourlyRangeParams{FromTs: dayFrom, ToTs: dayTo})
+	if err != nil {
+		return res, fmt.Errorf("load hourly: %w", err)
+	}
+	daily, err := mergeHourly(hourRows, cfg.Loc)
+	if err != nil {
+		return res, err
+	}
+	daily = capValues(daily, cfg.TopN)
+	res.DailyRows = len(daily)
+
 	if err := q.DeleteRollupDailyRange(ctx, store.DeleteRollupDailyRangeParams{FromDay: AsDate(dayFrom), ToDay: AsDate(dayTo)}); err != nil {
 		return res, fmt.Errorf("clear daily: %w", err)
 	}
@@ -184,9 +195,6 @@ func (j *Job) run(ctx context.Context) (Result, error) {
 	rawCutoff := now.Add(-cfg.RawRetention)
 	if frontier := hourTo.Add(-cfg.Reroll - cfg.SessionLookback); frontier.Before(rawCutoff) {
 		rawCutoff = frontier
-	}
-	if dayTo.Before(rawCutoff) {
-		rawCutoff = dayTo
 	}
 	if res.DeletedRaw, err = j.Q.DeleteEventsRawBefore(ctx, rawCutoff); err != nil {
 		return res, fmt.Errorf("retention raw: %w", err)
@@ -217,9 +225,12 @@ func (j *Job) resumePoint(ctx context.Context, now time.Time) (hourFrom, dayFrom
 		return time.Time{}, time.Time{}, err
 	}
 	hourFrom = TruncHour(state.HourlyThrough.Add(-j.Cfg.Reroll), loc)
-	// Days are not re-rolled: by the time a day is closed its first hours are
-	// already close to raw retention, so a recompute could see a partial day.
+	// A day is rebuilt whenever one of its hours is, which is safe now that
+	// days come from hourly sketches rather than raw events.
 	dayFrom = FromDate(state.DailyThrough, loc)
+	if d := TruncDay(hourFrom, loc); d.Before(dayFrom) {
+		dayFrom = d
+	}
 	return hourFrom, dayFrom, nil
 }
 
@@ -249,20 +260,25 @@ func (j *Job) RunEvery(ctx context.Context, interval time.Duration) {
 	}
 }
 
-func hourlyParams(rows map[key]*agg) store.UpsertRollupHourlyParams {
+func hourlyParams(rows map[key]*agg) (store.UpsertRollupHourlyParams, error) {
 	var p store.UpsertRollupHourlyParams
 	for k, a := range rows {
+		sk, err := a.sketch().MarshalBinary()
+		if err != nil {
+			return p, err
+		}
+		p.Sketches = append(p.Sketches, sk)
 		p.SiteIds = append(p.SiteIds, k.site)
 		p.Buckets = append(p.Buckets, k.bucket.UTC())
 		p.Dimensions = append(p.Dimensions, k.dimension)
 		p.Vals = append(p.Vals, k.value)
 		p.Pageviews = append(p.Pageviews, int32(a.pageviews))
-		p.Visitors = append(p.Visitors, int32(len(a.visitors)))
+		p.Visitors = append(p.Visitors, int32(a.uniques()))
 		p.Visits = append(p.Visits, int32(a.visits))
 		p.Bounces = append(p.Bounces, int32(a.bounces))
 		p.DurationSums = append(p.DurationSums, a.duration)
 	}
-	return p
+	return p, nil
 }
 
 func dailyParams(rows map[key]*agg) store.UpsertRollupDailyParams {
@@ -273,7 +289,7 @@ func dailyParams(rows map[key]*agg) store.UpsertRollupDailyParams {
 		p.Dimensions = append(p.Dimensions, k.dimension)
 		p.Vals = append(p.Vals, k.value)
 		p.Pageviews = append(p.Pageviews, int32(a.pageviews))
-		p.Visitors = append(p.Visitors, int32(len(a.visitors)))
+		p.Visitors = append(p.Visitors, int32(a.uniques()))
 		p.Visits = append(p.Visits, int32(a.visits))
 		p.Bounces = append(p.Bounces, int32(a.bounces))
 		p.DurationSums = append(p.DurationSums, a.duration)

@@ -113,8 +113,7 @@ type ListEventsForRollupRow struct {
 	Device    string
 }
 
-// Everything the aggregator needs, oldest first. visitor_id stays in the
-// database process boundary only as long as the rollup run.
+// Everything the aggregator needs, oldest first.
 func (q *Queries) ListEventsForRollup(ctx context.Context, arg ListEventsForRollupParams) ([]ListEventsForRollupRow, error) {
 	rows, err := q.db.QueryContext(ctx, listEventsForRollup, arg.FromTs, arg.ToTs)
 	if err != nil {
@@ -136,6 +135,63 @@ func (q *Queries) ListEventsForRollup(ctx context.Context, arg ListEventsForRoll
 			&i.Browser,
 			&i.Os,
 			&i.Device,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRollupHourlyRange = `-- name: ListRollupHourlyRange :many
+SELECT site_id, bucket, dimension, value, pageviews, visits, bounces, duration_sum, visitors_hll
+FROM rollup_hourly
+WHERE bucket >= $1 AND bucket < $2
+`
+
+type ListRollupHourlyRangeParams struct {
+	FromTs time.Time
+	ToTs   time.Time
+}
+
+type ListRollupHourlyRangeRow struct {
+	SiteID      int64
+	Bucket      time.Time
+	Dimension   string
+	Value       string
+	Pageviews   int32
+	Visits      int32
+	Bounces     int32
+	DurationSum int64
+	VisitorsHll []byte
+}
+
+// Input for daily rows: every hourly row, sketch included, in [from, to).
+func (q *Queries) ListRollupHourlyRange(ctx context.Context, arg ListRollupHourlyRangeParams) ([]ListRollupHourlyRangeRow, error) {
+	rows, err := q.db.QueryContext(ctx, listRollupHourlyRange, arg.FromTs, arg.ToTs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRollupHourlyRangeRow
+	for rows.Next() {
+		var i ListRollupHourlyRangeRow
+		if err := rows.Scan(
+			&i.SiteID,
+			&i.Bucket,
+			&i.Dimension,
+			&i.Value,
+			&i.Pageviews,
+			&i.Visits,
+			&i.Bounces,
+			&i.DurationSum,
+			&i.VisitorsHll,
 		); err != nil {
 			return nil, err
 		}
@@ -412,7 +468,7 @@ func (q *Queries) UpsertRollupDaily(ctx context.Context, arg UpsertRollupDailyPa
 }
 
 const upsertRollupHourly = `-- name: UpsertRollupHourly :exec
-INSERT INTO rollup_hourly (site_id, bucket, dimension, value, pageviews, visitors, visits, bounces, duration_sum)
+INSERT INTO rollup_hourly (site_id, bucket, dimension, value, pageviews, visitors, visits, bounces, duration_sum, visitors_hll)
 SELECT
   unnest($1::bigint[]),
   unnest($2::timestamptz[]),
@@ -422,13 +478,15 @@ SELECT
   unnest($6::int[]),
   unnest($7::int[]),
   unnest($8::int[]),
-  unnest($9::bigint[])
+  unnest($9::bigint[]),
+  unnest($10::bytea[])
 ON CONFLICT (site_id, bucket, dimension, value) DO UPDATE
 SET pageviews    = EXCLUDED.pageviews,
     visitors     = EXCLUDED.visitors,
     visits       = EXCLUDED.visits,
     bounces      = EXCLUDED.bounces,
-    duration_sum = EXCLUDED.duration_sum
+    duration_sum = EXCLUDED.duration_sum,
+    visitors_hll = EXCLUDED.visitors_hll
 `
 
 type UpsertRollupHourlyParams struct {
@@ -441,6 +499,7 @@ type UpsertRollupHourlyParams struct {
 	Visits       []int32
 	Bounces      []int32
 	DurationSums []int64
+	Sketches     [][]byte
 }
 
 // Bulk upsert from parallel arrays; multiple unnest() calls in one select
@@ -456,6 +515,7 @@ func (q *Queries) UpsertRollupHourly(ctx context.Context, arg UpsertRollupHourly
 		pq.Array(arg.Visits),
 		pq.Array(arg.Bounces),
 		pq.Array(arg.DurationSums),
+		pq.Array(arg.Sketches),
 	)
 	return err
 }

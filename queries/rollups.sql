@@ -9,8 +9,7 @@ SET hourly_through = EXCLUDED.hourly_through,
     daily_through  = EXCLUDED.daily_through;
 
 -- name: ListEventsForRollup :many
--- Everything the aggregator needs, oldest first. visitor_id stays in the
--- database process boundary only as long as the rollup run.
+-- Everything the aggregator needs, oldest first.
 SELECT site_id, ts, visitor_id, session_id, name, pathname,
        coalesce(referrer, '')::text AS referrer,
        coalesce(country, '')::text  AS country,
@@ -32,7 +31,7 @@ DELETE FROM rollup_daily WHERE day >= sqlc.arg(from_day) AND day < sqlc.arg(to_d
 -- name: UpsertRollupHourly :exec
 -- Bulk upsert from parallel arrays; multiple unnest() calls in one select
 -- list zip element-wise when the arrays are the same length.
-INSERT INTO rollup_hourly (site_id, bucket, dimension, value, pageviews, visitors, visits, bounces, duration_sum)
+INSERT INTO rollup_hourly (site_id, bucket, dimension, value, pageviews, visitors, visits, bounces, duration_sum, visitors_hll)
 SELECT
   unnest(sqlc.arg(site_ids)::bigint[]),
   unnest(sqlc.arg(buckets)::timestamptz[]),
@@ -42,13 +41,21 @@ SELECT
   unnest(sqlc.arg(visitors)::int[]),
   unnest(sqlc.arg(visits)::int[]),
   unnest(sqlc.arg(bounces)::int[]),
-  unnest(sqlc.arg(duration_sums)::bigint[])
+  unnest(sqlc.arg(duration_sums)::bigint[]),
+  unnest(sqlc.arg(sketches)::bytea[])
 ON CONFLICT (site_id, bucket, dimension, value) DO UPDATE
 SET pageviews    = EXCLUDED.pageviews,
     visitors     = EXCLUDED.visitors,
     visits       = EXCLUDED.visits,
     bounces      = EXCLUDED.bounces,
-    duration_sum = EXCLUDED.duration_sum;
+    duration_sum = EXCLUDED.duration_sum,
+    visitors_hll = EXCLUDED.visitors_hll;
+
+-- name: ListRollupHourlyRange :many
+-- Input for daily rows: every hourly row, sketch included, in [from, to).
+SELECT site_id, bucket, dimension, value, pageviews, visits, bounces, duration_sum, visitors_hll
+FROM rollup_hourly
+WHERE bucket >= sqlc.arg(from_ts) AND bucket < sqlc.arg(to_ts);
 
 -- name: UpsertRollupDaily :exec
 INSERT INTO rollup_daily (site_id, day, dimension, value, pageviews, visitors, visits, bounces, duration_sum)

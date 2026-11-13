@@ -63,8 +63,8 @@ func TestAggregate(t *testing.T) {
 	}
 
 	total := at(h, DimTotal, "")
-	if total.pageviews != 4 || len(total.visitors) != 3 {
-		t.Errorf("10:00 total pageviews=%d visitors=%d, want 4, 3", total.pageviews, len(total.visitors))
+	if total.pageviews != 4 || total.uniques() != 3 {
+		t.Errorf("10:00 total pageviews=%d visitors=%d, want 4, 3", total.pageviews, total.uniques())
 	}
 	if total.visits != 2 || total.bounces != 1 || total.duration != 600 {
 		t.Errorf("10:00 total visits=%d bounces=%d duration=%d, want 2, 1, 600", total.visits, total.bounces, total.duration)
@@ -119,8 +119,8 @@ func TestCapValuesFoldsTail(t *testing.T) {
 	if other == nil || other.pageviews != 7+6+5+4+3+2+1 {
 		t.Fatalf("(other) = %+v, want 28 pageviews", other)
 	}
-	if len(other.visitors) != 7 { // visitors 0..6 appear on /p3
-		t.Fatalf("(other) visitors = %d, want 7 (deduplicated union)", len(other.visitors))
+	if other.uniques() != 7 { // visitors 0..6 appear on /p3
+		t.Fatalf("(other) visitors = %d, want 7 (deduplicated union)", other.uniques())
 	}
 	if rows[key{1, h, DimTotal, ""}].pageviews != 55 {
 		t.Fatal("total must not be capped")

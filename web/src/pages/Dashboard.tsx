@@ -126,7 +126,13 @@ export default function Dashboard() {
       ) : (
         <>
           <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-5">
-            <StatTile label="Unique visitors" value={summary.data?.visitors} series="visitors" loading={firstLoad} />
+            <StatTile
+              label="Unique visitors"
+              value={summary.data?.visitors}
+              series="visitors"
+              loading={firstLoad}
+              hint="Counted per day and summed across days. Older days are HyperLogLog estimates, accurate to about 1–2%."
+            />
             <StatTile label="Pageviews" value={summary.data?.pageviews} series="pageviews" loading={firstLoad} />
             <StatTile
               label="Visits"
@@ -215,7 +221,9 @@ export default function Dashboard() {
           <p className="mt-6 text-xs leading-relaxed text-zinc-500">
             Visitors and pageviews count page loads only; custom events are listed separately.
             Times are IST (UTC+5:30). Unique visitors are counted per day and summed, so someone
-            visiting on two days counts twice — that is the cost of not using cookies.
+            visiting on two days counts twice — that is the cost of not using cookies. Days older
+            than 48 hours come from rollups: their visitor counts are estimates, typically within
+            1–2%, and rarely-seen pages or sources are grouped as “(other)”.
             A visit ends after 30 minutes of inactivity; a bounce is a visit with one pageview
             and no custom event.
           </p>
