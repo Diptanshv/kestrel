@@ -8,6 +8,28 @@ WHERE site_id = sqlc.arg(site_id)
   AND ts <  sqlc.arg(to_ts)
   AND name = 'pageview';
 
+-- name: StatsSessions :one
+-- A visit is one session_id. Bounce: exactly one pageview and no custom event.
+-- Duration: last event minus first, so a bounce contributes 0 seconds.
+-- session_id 0 marks rows written before sessions existed; they are skipped.
+WITH s AS (
+  SELECT
+    count(*) FILTER (WHERE name = 'pageview')  AS pageviews,
+    count(*) FILTER (WHERE name <> 'pageview') AS custom,
+    extract(epoch FROM max(ts) - min(ts))      AS duration
+  FROM events_raw
+  WHERE site_id = sqlc.arg(site_id)
+    AND ts >= sqlc.arg(from_ts)
+    AND ts <  sqlc.arg(to_ts)
+    AND session_id <> 0
+  GROUP BY session_id
+)
+SELECT
+  count(*)::bigint                                              AS visits,
+  count(*) FILTER (WHERE pageviews = 1 AND custom = 0)::bigint AS bounces,
+  coalesce(sum(duration), 0)::bigint                            AS duration_sum
+FROM s;
+
 -- name: StatsTimeseriesHourly :many
 SELECT
   b.bucket::timestamptz                  AS bucket,

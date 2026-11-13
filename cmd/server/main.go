@@ -16,6 +16,7 @@ import (
 	"github.com/Diptanshv/kestrel/internal/config"
 	"github.com/Diptanshv/kestrel/internal/enrich"
 	"github.com/Diptanshv/kestrel/internal/httpapi"
+	"github.com/Diptanshv/kestrel/internal/sessions"
 	"github.com/Diptanshv/kestrel/internal/store"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
@@ -74,6 +75,10 @@ func main() {
 	}
 
 	enricher := enrich.New(enrich.NewSaltStore(queries), geo)
+	enricher.Sessions = sessions.New()
+	bgCtx, stopBackground := context.WithCancel(context.Background())
+	defer stopBackground()
+	go enricher.Sessions.Run(bgCtx, time.Minute)
 
 	batcher := batch.New(batch.CopyWriter{DB: db}, logger, batch.Config{
 		BufferSize:    cfg.IngestBufferSize,

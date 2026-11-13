@@ -11,10 +11,6 @@ import (
 	"github.com/Diptanshv/kestrel/internal/metrics"
 )
 
-// unassignedSession is written to events_raw.session_id until Phase 7 adds the
-// in-memory session tracker. The column is NOT NULL and has no table behind it.
-const unassignedSession int64 = 0
-
 // handleEvent validates and enriches in the request, then hands the row to the
 // sink and returns. No database write happens on this path; the batcher
 // flushes within FlushInterval.
@@ -74,7 +70,7 @@ func (api *API) handleEvent(w http.ResponseWriter, r *http.Request) {
 		SiteID:    site.ID,
 		Ts:        time.Now().UTC(),
 		VisitorID: f.VisitorID,
-		SessionID: unassignedSession,
+		SessionID: f.SessionID,
 		Name:      ev.Name,
 		Pathname:  ev.Pathname,
 		Referrer:  nullString(ev.Referrer),

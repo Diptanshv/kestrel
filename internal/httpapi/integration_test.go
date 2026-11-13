@@ -19,6 +19,7 @@ import (
 	"github.com/Diptanshv/kestrel/internal/config"
 	"github.com/Diptanshv/kestrel/internal/enrich"
 	"github.com/Diptanshv/kestrel/internal/httpapi"
+	"github.com/Diptanshv/kestrel/internal/sessions"
 	"github.com/Diptanshv/kestrel/internal/store"
 	"github.com/Diptanshv/kestrel/internal/testdb"
 )
@@ -82,7 +83,7 @@ func testDeps(logger *slog.Logger, q *store.Queries) httpapi.Deps {
 		Log:     logger,
 		Queries: q,
 		Config:  integrationCfg,
-		Enrich:  enrich.New(enrich.NewSaltStore(q), &enrich.Geo{}),
+		Enrich:  &enrich.Enricher{Salts: enrich.NewSaltStore(q), Geo: &enrich.Geo{}, Sessions: sessions.New()},
 		Sink:    batch.Direct{W: batch.InsertWriter{Q: q}, Log: logger},
 	}
 }

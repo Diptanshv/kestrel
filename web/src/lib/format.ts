@@ -40,3 +40,16 @@ export function bucketTitle(iso: string, interval: string): string {
       : { timeZone: TZ, weekday: 'short', month: 'short', day: 'numeric' }
   return `${d.toLocaleString(undefined, opts)} ${TZ_LABEL}`
 }
+
+export function percent(n: number): string {
+  return `${n.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`
+}
+
+/** Seconds as "45s", "3m 20s" or "1h 5m". */
+export function duration(seconds: number): string {
+  const s = Math.round(seconds)
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m ${s % 60}s`
+  return `${Math.floor(m / 60)}h ${m % 60}m`
+}
