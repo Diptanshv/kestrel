@@ -78,6 +78,23 @@ func (q *Queries) GetSiteByID(ctx context.Context, id int64) (Site, error) {
 	return i, err
 }
 
+const getSiteByPublicSlug = `-- name: GetSiteByPublicSlug :one
+SELECT id, user_id, domain, public_slug, created_at FROM sites WHERE public_slug = $1
+`
+
+func (q *Queries) GetSiteByPublicSlug(ctx context.Context, publicSlug sql.NullString) (Site, error) {
+	row := q.db.QueryRowContext(ctx, getSiteByPublicSlug, publicSlug)
+	var i Site
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Domain,
+		&i.PublicSlug,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const listSitesByUserID = `-- name: ListSitesByUserID :many
 SELECT id, user_id, domain, public_slug, created_at FROM sites WHERE user_id = $1 ORDER BY id
 `
@@ -109,6 +126,30 @@ func (q *Queries) ListSitesByUserID(ctx context.Context, userID int64) ([]Site, 
 		return nil, err
 	}
 	return items, nil
+}
+
+const setSitePublicSlug = `-- name: SetSitePublicSlug :one
+UPDATE sites SET public_slug = $1 WHERE id = $2
+RETURNING id, user_id, domain, public_slug, created_at
+`
+
+type SetSitePublicSlugParams struct {
+	PublicSlug sql.NullString
+	ID         int64
+}
+
+// Separate from UpdateSite because that one cannot set a column to NULL.
+func (q *Queries) SetSitePublicSlug(ctx context.Context, arg SetSitePublicSlugParams) (Site, error) {
+	row := q.db.QueryRowContext(ctx, setSitePublicSlug, arg.PublicSlug, arg.ID)
+	var i Site
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Domain,
+		&i.PublicSlug,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const updateSite = `-- name: UpdateSite :one

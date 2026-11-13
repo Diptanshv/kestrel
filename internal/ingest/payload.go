@@ -4,6 +4,8 @@ import (
 	"errors"
 	"net/url"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/Diptanshv/kestrel/internal/sites"
 )
@@ -13,6 +15,12 @@ const (
 	MaxNameLen      = 64
 	MaxReferrerLen  = 200
 	MaxUTMSourceLen = 64
+	MaxURLLen       = 2048
+	MaxProps        = 10
+	MaxPropLen      = 100
+
+	// MaxBodyBytes caps the beacon body. A real one is ~200 bytes.
+	MaxBodyBytes = 4 << 10
 )
 
 // Payload is the JSON body the tracker sends to POST /api/event.
@@ -58,6 +66,17 @@ func Parse(p Payload) (Event, error) {
 	if strings.TrimSpace(p.URL) == "" {
 		return Event{}, errors.New("url is required")
 	}
+	if len(p.URL) > MaxURLLen || len(p.Referrer) > MaxURLLen {
+		return Event{}, errors.New("url too long")
+	}
+	if len(p.Props) > MaxProps {
+		return Event{}, errors.New("too many props")
+	}
+	for k, v := range p.Props {
+		if len(k) > MaxPropLen || len(v) > MaxPropLen {
+			return Event{}, errors.New("prop too long")
+		}
+	}
 	u, err := url.Parse(p.URL)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 		return Event{}, errors.New("invalid url")
@@ -66,6 +85,12 @@ func Parse(p Payload) (Event, error) {
 	path, err := normalizePath(u.Path)
 	if err != nil {
 		return Event{}, err
+	}
+	// url.Parse decodes percent-escapes, so the path can now hold bytes
+	// Postgres refuses (NUL, invalid UTF-8). One such row would fail the
+	// whole COPY batch it lands in, so it is rejected here.
+	if !cleanText(path) {
+		return Event{}, errors.New("invalid characters in path")
 	}
 
 	return Event{
@@ -112,7 +137,7 @@ func referrerHost(referrer, selfHost string) string {
 	if host == strings.TrimPrefix(strings.ToLower(selfHost), "www.") {
 		return ""
 	}
-	if len(host) > MaxReferrerLen {
+	if len(host) > MaxReferrerLen || !cleanText(host) {
 		return ""
 	}
 	return host
@@ -122,7 +147,12 @@ func referrerHost(referrer, selfHost string) string {
 func utmSource(u *url.URL) string {
 	v := strings.ToLower(strings.TrimSpace(u.Query().Get("utm_source")))
 	if len(v) > MaxUTMSourceLen {
-		return v[:MaxUTMSourceLen]
+		v = v[:MaxUTMSourceLen]
+	}
+	// Cutting at a byte offset can split a rune; drop the value rather than
+	// store something Postgres will reject.
+	if !cleanText(v) {
+		return ""
 	}
 	return v
 }
@@ -149,6 +179,20 @@ func validEventName(name string) bool {
 			r >= '0' && r <= '9',
 			r == '_', r == '-', r == '.', r == ':':
 		default:
+			return false
+		}
+	}
+	return true
+}
+
+// cleanText reports whether s is valid UTF-8 with no control characters,
+// i.e. safe to store in a Postgres TEXT column and to render.
+func cleanText(s string) bool {
+	if !utf8.ValidString(s) {
+		return false
+	}
+	for _, r := range s {
+		if unicode.IsControl(r) {
 			return false
 		}
 	}
