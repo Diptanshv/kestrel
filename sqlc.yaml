@@ -6,6 +6,7 @@ sql:
       - migrations/000002_create_sessions.up.sql
       - migrations/000004_create_events_raw.up.sql
       - migrations/000005_create_salts.up.sql
+      - migrations/000006_create_rollups.up.sql
     queries: queries
     gen:
       go:

@@ -51,6 +51,17 @@ var (
 		Help: "Events waiting in the ingest channel at the last observation.",
 	})
 
+	RollupDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "rollup_duration_seconds",
+		Help:    "Wall time of one rollup run.",
+		Buckets: prometheus.ExponentialBuckets(0.01, 2, 12), // 10ms .. ~40s
+	})
+
+	RollupLastSuccess = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "rollup_last_success_timestamp",
+		Help: "Unix time of the last successful rollup run.",
+	})
+
 	HTTPDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "http_request_duration_seconds",
 		Help:    "HTTP request latency by route pattern.",

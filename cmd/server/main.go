@@ -16,6 +16,7 @@ import (
 	"github.com/Diptanshv/kestrel/internal/config"
 	"github.com/Diptanshv/kestrel/internal/enrich"
 	"github.com/Diptanshv/kestrel/internal/httpapi"
+	"github.com/Diptanshv/kestrel/internal/rollup"
 	"github.com/Diptanshv/kestrel/internal/sessions"
 	"github.com/Diptanshv/kestrel/internal/store"
 	"github.com/golang-migrate/migrate/v4"
@@ -87,6 +88,14 @@ func main() {
 	})
 	batcher.Start()
 
+	loc, err := time.LoadLocation(cfg.Timezone)
+	if err != nil {
+		logger.Error("invalid TIMEZONE", "tz", cfg.Timezone, "err", err)
+		os.Exit(1)
+	}
+	rollupJob := rollup.New(db, rollup.DefaultConfig(loc), logger)
+	go rollupJob.RunEvery(bgCtx, cfg.RollupInterval)
+
 	srv := &http.Server{
 		Addr: ":" + cfg.Port,
 		Handler: httpapi.NewRouter(httpapi.Deps{
@@ -95,6 +104,7 @@ func main() {
 			Config:  cfg,
 			Enrich:  enricher,
 			Sink:    batcher,
+			Rollup:  rollupJob,
 		}),
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
