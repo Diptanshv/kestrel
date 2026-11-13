@@ -1,4 +1,4 @@
-.PHONY: up down logs migrate-up migrate-down run test test-db vet sqlc web-install web-dev web-build
+.PHONY: up down logs migrate-up migrate-down run test test-db vet sqlc web-install web-dev web-build geoip
 
 # The suite TRUNCATEs users CASCADE between tests, which would wipe the dev
 # database. Point it at a separate one unless the caller already chose a target.
@@ -29,8 +29,9 @@ test-db:
 		"SELECT 1 FROM pg_database WHERE datname='pulse_test'" | grep -q 1 \
 		|| docker compose exec -T db psql -U pulse -d postgres -c "CREATE DATABASE pulse_test"
 
+# -p 1: packages share pulse_test and each one TRUNCATEs it.
 test: test-db
-	TEST_DATABASE_URL="$(TEST_DATABASE_URL)" go test ./...
+	TEST_DATABASE_URL="$(TEST_DATABASE_URL)" go test -p 1 ./cmd/... ./internal/...
 
 vet:
 	go vet ./...
@@ -44,3 +45,10 @@ web-dev:
 
 web-build:
 	cd web && npm run build
+
+geoip:
+	@mkdir -p data
+	curl -fSL -o data/dbip-country-lite.mmdb.gz \
+		"https://download.db-ip.com/free/dbip-country-lite-$$(date +%Y-%m).mmdb.gz"
+	gunzip -f data/dbip-country-lite.mmdb.gz
+	@echo "data/dbip-country-lite.mmdb ready - set GEOIP_DB_PATH to it"

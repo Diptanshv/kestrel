@@ -8,25 +8,32 @@ import (
 	"github.com/Diptanshv/kestrel/internal/store"
 )
 
-// Dimension is a breakdown axis. Phase 5 adds country, browser, os and device
-// once enrichment fills those columns.
+// Dimension is a breakdown axis.
 type Dimension string
 
 const (
 	DimensionPage     Dimension = "page"
 	DimensionReferrer Dimension = "referrer"
 	DimensionEvent    Dimension = "event"
+	DimensionCountry  Dimension = "country"
+	DimensionBrowser  Dimension = "browser"
+	DimensionOS       Dimension = "os"
+	DimensionDevice   Dimension = "device"
 )
 
+var dimensions = map[Dimension]bool{
+	DimensionPage: true, DimensionReferrer: true, DimensionEvent: true,
+	DimensionCountry: true, DimensionBrowser: true, DimensionOS: true, DimensionDevice: true,
+}
+
 func ParseDimension(v string) (Dimension, error) {
-	switch Dimension(v) {
-	case DimensionPage, DimensionReferrer, DimensionEvent:
-		return Dimension(v), nil
-	case "":
+	if v == "" {
 		return "", errors.New("dimension is required")
-	default:
-		return "", errors.New(`dimension must be "page", "referrer" or "event"`)
 	}
+	if !dimensions[Dimension(v)] {
+		return "", errors.New(`dimension must be one of: page, referrer, event, country, browser, os, device`)
+	}
+	return Dimension(v), nil
 }
 
 const (
@@ -116,10 +123,7 @@ func (s *Service) Breakdown(ctx context.Context, siteID int64, r Range, dim Dime
 	switch dim {
 	case DimensionPage:
 		rows, err := s.Q.StatsBreakdownPages(ctx, store.StatsBreakdownPagesParams{
-			SiteID:   siteID,
-			FromTs:   r.From,
-			ToTs:     r.To,
-			RowLimit: limit,
+			SiteID: siteID, FromTs: r.From, ToTs: r.To, RowLimit: limit,
 		})
 		if err != nil {
 			return nil, err
@@ -131,13 +135,8 @@ func (s *Service) Breakdown(ctx context.Context, siteID int64, r Range, dim Dime
 		return out, nil
 
 	case DimensionEvent:
-		// Custom events only: 'pageview' is excluded by the query, so this
-		// counts goal completions rather than page loads.
 		rows, err := s.Q.StatsBreakdownEvents(ctx, store.StatsBreakdownEventsParams{
-			SiteID:   siteID,
-			FromTs:   r.From,
-			ToTs:     r.To,
-			RowLimit: limit,
+			SiteID: siteID, FromTs: r.From, ToTs: r.To, RowLimit: limit,
 		})
 		if err != nil {
 			return nil, err
@@ -150,10 +149,59 @@ func (s *Service) Breakdown(ctx context.Context, siteID int64, r Range, dim Dime
 
 	case DimensionReferrer:
 		rows, err := s.Q.StatsBreakdownReferrers(ctx, store.StatsBreakdownReferrersParams{
-			SiteID:   siteID,
-			FromTs:   r.From,
-			ToTs:     r.To,
-			RowLimit: limit,
+			SiteID: siteID, FromTs: r.From, ToTs: r.To, RowLimit: limit,
+		})
+		if err != nil {
+			return nil, err
+		}
+		out := make([]BreakdownRow, 0, len(rows))
+		for _, row := range rows {
+			out = append(out, BreakdownRow{Value: row.Value, Pageviews: row.Pageviews, Visitors: row.Visitors})
+		}
+		return out, nil
+
+	case DimensionCountry:
+		rows, err := s.Q.StatsBreakdownCountries(ctx, store.StatsBreakdownCountriesParams{
+			SiteID: siteID, FromTs: r.From, ToTs: r.To, RowLimit: limit,
+		})
+		if err != nil {
+			return nil, err
+		}
+		out := make([]BreakdownRow, 0, len(rows))
+		for _, row := range rows {
+			out = append(out, BreakdownRow{Value: row.Value, Pageviews: row.Pageviews, Visitors: row.Visitors})
+		}
+		return out, nil
+
+	case DimensionBrowser:
+		rows, err := s.Q.StatsBreakdownBrowsers(ctx, store.StatsBreakdownBrowsersParams{
+			SiteID: siteID, FromTs: r.From, ToTs: r.To, RowLimit: limit,
+		})
+		if err != nil {
+			return nil, err
+		}
+		out := make([]BreakdownRow, 0, len(rows))
+		for _, row := range rows {
+			out = append(out, BreakdownRow{Value: row.Value, Pageviews: row.Pageviews, Visitors: row.Visitors})
+		}
+		return out, nil
+
+	case DimensionOS:
+		rows, err := s.Q.StatsBreakdownOS(ctx, store.StatsBreakdownOSParams{
+			SiteID: siteID, FromTs: r.From, ToTs: r.To, RowLimit: limit,
+		})
+		if err != nil {
+			return nil, err
+		}
+		out := make([]BreakdownRow, 0, len(rows))
+		for _, row := range rows {
+			out = append(out, BreakdownRow{Value: row.Value, Pageviews: row.Pageviews, Visitors: row.Visitors})
+		}
+		return out, nil
+
+	case DimensionDevice:
+		rows, err := s.Q.StatsBreakdownDevices(ctx, store.StatsBreakdownDevicesParams{
+			SiteID: siteID, FromTs: r.From, ToTs: r.To, RowLimit: limit,
 		})
 		if err != nil {
 			return nil, err
