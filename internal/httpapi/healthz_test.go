@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Diptanshv/kestrel/internal/config"
@@ -17,7 +18,7 @@ func TestHealthz(t *testing.T) {
 
 	logger := slog.New(slog.DiscardHandler)
 	enricher := enrich.New(enrich.NewSaltStore(nil), &enrich.Geo{})
-	srv := httptest.NewServer(httpapi.NewRouter(logger, nil, config.Config{}, enricher))
+	srv := httptest.NewServer(httpapi.NewRouter(httpapi.Deps{Log: logger, Config: config.Config{}, Enrich: enricher}))
 	t.Cleanup(srv.Close)
 
 	resp, err := http.Get(srv.URL + "/healthz")
@@ -37,5 +38,29 @@ func TestHealthz(t *testing.T) {
 	const want = `{"status":"ok"}` + "\n"
 	if string(body) != want {
 		t.Fatalf("body = %q, want %q", body, want)
+	}
+}
+
+func TestMetricsEndpoint(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.DiscardHandler)
+	enricher := enrich.New(enrich.NewSaltStore(nil), &enrich.Geo{})
+	srv := httptest.NewServer(httpapi.NewRouter(httpapi.Deps{Log: logger, Enrich: enricher}))
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "/metrics")
+	if err != nil {
+		t.Fatalf("GET /metrics: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	for _, name := range []string{"events_received_total", "batch_flush_duration_seconds", "buffer_depth"} {
+		if !strings.Contains(string(body), name) {
+			t.Errorf("/metrics missing %s", name)
+		}
 	}
 }

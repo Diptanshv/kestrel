@@ -29,8 +29,9 @@ test-db:
 		"SELECT 1 FROM pg_database WHERE datname='pulse_test'" | grep -q 1 \
 		|| docker compose exec -T db psql -U pulse -d postgres -c "CREATE DATABASE pulse_test"
 
+# -p 1: packages share pulse_test and each one TRUNCATEs it.
 test: test-db
-	TEST_DATABASE_URL="$(TEST_DATABASE_URL)" go test ./...
+	TEST_DATABASE_URL="$(TEST_DATABASE_URL)" go test -p 1 ./cmd/... ./internal/...
 
 vet:
 	go vet ./...
