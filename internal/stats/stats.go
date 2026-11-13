@@ -57,8 +57,27 @@ func New(q *store.Queries, timezone string) *Service {
 }
 
 type Summary struct {
-	Pageviews int64
-	Visitors  int64
+	Pageviews   int64
+	Visitors    int64
+	Visits      int64
+	Bounces     int64
+	DurationSum int64 // seconds, summed over visits
+}
+
+// BounceRate is the share of visits that bounced, 0..1.
+func (s Summary) BounceRate() float64 {
+	if s.Visits == 0 {
+		return 0
+	}
+	return float64(s.Bounces) / float64(s.Visits)
+}
+
+// AvgDuration is the mean visit length in seconds.
+func (s Summary) AvgDuration() float64 {
+	if s.Visits == 0 {
+		return 0
+	}
+	return float64(s.DurationSum) / float64(s.Visits)
 }
 
 func (s *Service) Summary(ctx context.Context, siteID int64, r Range) (Summary, error) {
@@ -70,7 +89,21 @@ func (s *Service) Summary(ctx context.Context, siteID int64, r Range) (Summary, 
 	if err != nil {
 		return Summary{}, err
 	}
-	return Summary{Pageviews: row.Pageviews, Visitors: row.Visitors}, nil
+	sess, err := s.Q.StatsSessions(ctx, store.StatsSessionsParams{
+		SiteID: siteID,
+		FromTs: r.From,
+		ToTs:   r.To,
+	})
+	if err != nil {
+		return Summary{}, err
+	}
+	return Summary{
+		Pageviews:   row.Pageviews,
+		Visitors:    row.Visitors,
+		Visits:      sess.Visits,
+		Bounces:     sess.Bounces,
+		DurationSum: sess.DurationSum,
+	}, nil
 }
 
 type Point struct {

@@ -3,12 +3,15 @@ package enrich
 import (
 	"context"
 	"time"
+
+	"github.com/Diptanshv/kestrel/internal/sessions"
 )
 
 // Fields are the enriched values events_raw stores. Note what is absent: the
 // IP and the user agent string went in and did not come out.
 type Fields struct {
 	VisitorID []byte
+	SessionID int64
 	Country   string
 	Browser   string
 	OS        string
@@ -19,6 +22,9 @@ type Fields struct {
 type Enricher struct {
 	Salts *SaltStore
 	Geo   *Geo
+	// Sessions assigns visits. Nil leaves SessionID at 0, which the stats
+	// queries treat as "no session".
+	Sessions *sessions.Tracker
 }
 
 func New(salts *SaltStore, geo *Geo) *Enricher {
@@ -39,8 +45,15 @@ func (e *Enricher) Enrich(ctx context.Context, siteID int64, ip, userAgent strin
 		return Fields{}, err
 	}
 
+	visitor := VisitorID(salt, siteID, ip, userAgent)
+	var session int64
+	if e.Sessions != nil {
+		session = e.Sessions.Assign(siteID, visitor, now)
+	}
+
 	return Fields{
-		VisitorID: VisitorID(salt, siteID, ip, userAgent),
+		VisitorID: visitor,
+		SessionID: session,
 		Country:   e.Geo.Country(ip),
 		Browser:   ua.Browser,
 		OS:        ua.OS,

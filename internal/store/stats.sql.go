@@ -407,6 +407,48 @@ func (q *Queries) StatsBreakdownReferrers(ctx context.Context, arg StatsBreakdow
 	return items, nil
 }
 
+const statsSessions = `-- name: StatsSessions :one
+WITH s AS (
+  SELECT
+    count(*) FILTER (WHERE name = 'pageview')  AS pageviews,
+    count(*) FILTER (WHERE name <> 'pageview') AS custom,
+    extract(epoch FROM max(ts) - min(ts))      AS duration
+  FROM events_raw
+  WHERE site_id = $1
+    AND ts >= $2
+    AND ts <  $3
+    AND session_id <> 0
+  GROUP BY session_id
+)
+SELECT
+  count(*)::bigint                                              AS visits,
+  count(*) FILTER (WHERE pageviews = 1 AND custom = 0)::bigint AS bounces,
+  coalesce(sum(duration), 0)::bigint                            AS duration_sum
+FROM s
+`
+
+type StatsSessionsParams struct {
+	SiteID int64
+	FromTs time.Time
+	ToTs   time.Time
+}
+
+type StatsSessionsRow struct {
+	Visits      int64
+	Bounces     int64
+	DurationSum int64
+}
+
+// A visit is one session_id. Bounce: exactly one pageview and no custom event.
+// Duration: last event minus first, so a bounce contributes 0 seconds.
+// session_id 0 marks rows written before sessions existed; they are skipped.
+func (q *Queries) StatsSessions(ctx context.Context, arg StatsSessionsParams) (StatsSessionsRow, error) {
+	row := q.db.QueryRowContext(ctx, statsSessions, arg.SiteID, arg.FromTs, arg.ToTs)
+	var i StatsSessionsRow
+	err := row.Scan(&i.Visits, &i.Bounces, &i.DurationSum)
+	return i, err
+}
+
 const statsSummary = `-- name: StatsSummary :one
 SELECT
   count(*)::bigint                       AS pageviews,
