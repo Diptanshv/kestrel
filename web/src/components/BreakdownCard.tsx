@@ -16,6 +16,8 @@ export function BreakdownCard({
   emptyLabel,
   countLabel = 'Pageviews',
   valueLabel = 'Page',
+  onSelect,
+  conversionBase,
 }: {
   title: string
   rows: Breakdown['rows'] | undefined
@@ -24,6 +26,10 @@ export function BreakdownCard({
   emptyLabel: string
   countLabel?: string
   valueLabel?: string
+  /** Makes rows clickable, to filter the dashboard by that value. */
+  onSelect?: (value: string) => void
+  /** Total visitors; adds a conversion-rate column (row visitors / total). */
+  conversionBase?: number
 }) {
   const max = rows?.reduce((m, r) => Math.max(m, r.pageviews), 0) ?? 0
 
@@ -53,6 +59,11 @@ export function BreakdownCard({
                 <th scope="col" className="w-20 py-2 pr-4 text-right font-medium">
                   {countLabel}
                 </th>
+                {conversionBase !== undefined && (
+                  <th scope="col" className="w-16 py-2 pr-4 text-right font-medium" title="Visitors who triggered the event, as a share of all visitors">
+                    CR
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -70,12 +81,23 @@ export function BreakdownCard({
                         opacity: 0.1,
                       }}
                     />
-                    <span
-                      className="relative block max-w-[18rem] truncate py-2 text-zinc-800"
-                      title={row.value}
-                    >
-                      {row.value}
-                    </span>
+                    {onSelect && row.value !== '(other)' ? (
+                      <button
+                        type="button"
+                        onClick={() => onSelect(row.value)}
+                        title={`Filter by ${row.value}`}
+                        className="relative block max-w-[18rem] truncate py-2 text-left text-zinc-800 underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-zinc-900"
+                      >
+                        {row.value}
+                      </button>
+                    ) : (
+                      <span
+                        className="relative block max-w-[18rem] truncate py-2 text-zinc-800"
+                        title={row.value === '(other)' ? 'Values outside the top 50 on some days, grouped together' : row.value}
+                      >
+                        {row.value}
+                      </span>
+                    )}
                   </td>
                   <td className="w-20 py-2 pr-2 text-right tabular-nums text-zinc-500">
                     {full(row.visitors)}
@@ -83,6 +105,11 @@ export function BreakdownCard({
                   <td className="w-20 py-2 pr-4 text-right font-medium tabular-nums text-zinc-900">
                     {full(row.pageviews)}
                   </td>
+                  {conversionBase !== undefined && (
+                    <td className="w-16 py-2 pr-4 text-right tabular-nums text-zinc-500">
+                      {conversionBase ? `${((row.visitors / conversionBase) * 100).toFixed(1)}%` : '—'}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

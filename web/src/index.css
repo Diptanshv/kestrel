@@ -1,1 +1,46 @@
 @import "tailwindcss";
+
+/*
+ * Chart tokens. Series hues follow the entity (visitors blue, pageviews
+ * orange) and are stepped separately for each surface; both pairs pass the
+ * dataviz palette validator against their own surface.
+ */
+:root {
+  --series-visitors: #2a78d6;
+  --series-pageviews: #eb6834;
+  --chart-grid: #e4e4e7;
+  --chart-axis: #71717b;
+  --delta-good: #006300;
+  --delta-bad: #b42318;
+}
+
+/*
+ * Dark mode remaps Tailwind's neutral scale instead of adding dark: variants
+ * to every class: the UI is built almost entirely on zinc + white, so
+ * inverting that scale flips surfaces, ink and borders together. Primary
+ * buttons (bg-zinc-900 text-white) become light-on-dark's inverse, which is
+ * the usual dark-mode treatment.
+ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --color-white: oklch(21% 0.006 285.885);    /* card surface (zinc-900) */
+    --color-zinc-50: oklch(14.1% 0.005 285.823); /* page plane (zinc-950) */
+    --color-zinc-100: oklch(27.4% 0.006 286.033);
+    --color-zinc-200: oklch(32% 0.008 286);
+    --color-zinc-300: oklch(40% 0.012 286);
+    --color-zinc-400: oklch(55.2% 0.016 285.938);
+    --color-zinc-500: oklch(70.5% 0.015 286.067);
+    --color-zinc-600: oklch(78% 0.01 286);
+    --color-zinc-700: oklch(87.1% 0.006 286.286);
+    --color-zinc-800: oklch(92% 0.004 286.32);
+    --color-zinc-900: oklch(98.5% 0 0);
+
+    --series-visitors: #3987e5;
+    --series-pageviews: #d95926;
+    --chart-grid: #2c2c30;
+    --chart-axis: #8b8b93;
+    --delta-good: #0ca30c;
+    --delta-bad: #f27474;
+  }
+}

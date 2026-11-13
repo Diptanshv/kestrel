@@ -1,0 +1,43 @@
+name: ops
+
+# Free hosts sleep when idle and stop the in-process rollup ticker with them.
+# These two schedules cover for that. GitHub cron is best-effort (runs can
+# start minutes late), which is fine for both jobs: the rollup is idempotent
+# and catches up from its saved state.
+on:
+  schedule:
+    - cron: "*/10 * * * *" # keep-awake ping
+    - cron: "7 * * * *"    # hourly rollup, off the top of the hour
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "ping or rollup"
+        default: rollup
+
+jobs:
+  ping:
+    if: github.event.schedule == '*/10 * * * *' || inputs.job == 'ping'
+    runs-on: ubuntu-latest
+    steps:
+      - name: GET /healthz
+        env:
+          API_URL: ${{ vars.API_URL }}
+        run: |
+          if [ -z "$API_URL" ]; then echo "API_URL variable not set; skipping"; exit 0; fi
+          curl -fsS --retry 3 --retry-delay 10 --max-time 60 "$API_URL/healthz"
+
+  rollup:
+    if: github.event.schedule == '7 * * * *' || inputs.job == 'rollup'
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST /internal/rollup
+        env:
+          API_URL: ${{ vars.API_URL }}
+          ROLLUP_SECRET: ${{ secrets.ROLLUP_SECRET }}
+        run: |
+          if [ -z "$API_URL" ] || [ -z "$ROLLUP_SECRET" ]; then echo "API_URL / ROLLUP_SECRET not set; skipping"; exit 0; fi
+          # 409 means a run is already in progress, which is success here.
+          code=$(curl -sS -o /tmp/out -w '%{http_code}' --retry 3 --retry-delay 15 --max-time 120 \
+            -X POST -H "Authorization: Bearer $ROLLUP_SECRET" "$API_URL/internal/rollup")
+          cat /tmp/out; echo
+          [ "$code" = 200 ] || [ "$code" = 409 ]

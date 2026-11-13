@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"net/http"
 )
@@ -54,7 +55,7 @@ func (api *API) requireCSRF(next http.Handler) http.Handler {
 			return
 		}
 
-		if r.Header.Get(csrfHeaderName) != c.Value {
+		if subtle.ConstantTimeCompare([]byte(r.Header.Get(csrfHeaderName)), []byte(c.Value)) != 1 {
 			_ = writeError(w, http.StatusForbidden, "forbidden", "invalid csrf token")
 			return
 		}

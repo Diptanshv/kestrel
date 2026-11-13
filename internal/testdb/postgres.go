@@ -16,7 +16,11 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-const defaultDatabaseURL = "postgres://pulse:pulse@127.0.0.1:5433/pulse?sslmode=disable"
+// defaultDatabaseURL must never be the dev database: Reset TRUNCATEs users
+// CASCADE, which empties every table. A bare `go test` without
+// TEST_DATABASE_URL lands here, so it points at the dedicated test database
+// (`make test-db` creates it).
+const defaultDatabaseURL = "postgres://pulse:pulse@127.0.0.1:5433/pulse_test?sslmode=disable"
 
 // TestConfig returns API config suitable for httptest integration tests.
 func TestConfig() config.Config {
@@ -70,7 +74,7 @@ func Reset(t *testing.T, db *sql.DB) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_, err := db.ExecContext(ctx, "TRUNCATE users RESTART IDENTITY CASCADE")
+	_, err := db.ExecContext(ctx, "TRUNCATE users, rollup_state, salts RESTART IDENTITY CASCADE")
 	if err != nil {
 		t.Fatalf("truncate users: %v", err)
 	}
