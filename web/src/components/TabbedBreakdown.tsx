@@ -11,12 +11,15 @@ export function TabbedBreakdown({
   queryKey,
   title,
   tabs,
+  onSelect,
 }: {
   base: string
   params: string
   queryKey: unknown[]
   title: string
   tabs: Tab[]
+  /** Called with (dimension, value) when a row is clicked. */
+  onSelect?: (dimension: string, value: string) => void
 }) {
   const [active, setActive] = useState(tabs[0])
 
@@ -28,7 +31,7 @@ export function TabbedBreakdown({
 
   return (
     <div>
-      <div role="tablist" aria-label={title} className="mb-2 flex gap-1">
+      <div role="tablist" aria-label={title} className="mb-2 flex flex-wrap gap-1">
         {tabs.map(t => (
           <button
             key={t.dimension}
@@ -52,6 +55,7 @@ export function TabbedBreakdown({
         stale={q.isFetching}
         valueLabel={active.valueLabel}
         emptyLabel={active.emptyLabel}
+        onSelect={onSelect && (v => onSelect(active.dimension, v))}
       />
     </div>
   )

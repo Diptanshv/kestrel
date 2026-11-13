@@ -44,3 +44,25 @@ unrelated IDs on different days, and nothing can link them, not even us.
 Merging daily sketches across days would not help, because the IDs differ.
 A 30-day "unique visitors" figure is the sum of 30 daily figures, and the UI
 says so. This is the trade-off other cookieless tools accept.
+
+## Rollup frontier and backfills
+
+The rollup job remembers how far it has rolled (`rollup_state`), and each run
+recomputes only the last 2 hours before that point. Raw retention never
+deletes past the frontier, so nothing it has not yet rolled up is lost.
+
+This relies on one invariant: an event's `ts` is the server's receive time,
+so new rows never land far behind the frontier. Anything that inserts
+backdated rows directly (a seeder, an import) must run before the first
+rollup, or clear `rollup_state` first. Otherwise those rows sit behind the
+frontier, are never rolled up, and retention deletes them. The demo seeder
+does this.
+
+## Filters only cover the raw window
+
+Rollup rows store each dimension on its own: (hour, page) and (hour,
+country) are separate rows. That answers "top pages" and "top countries",
+but not "top pages for visitors from Germany". So filters run against raw
+events, which are kept 48 hours, and a filtered dashboard always shows
+exactly that window, with a label saying so. Composite rollups for a few
+popular pairs are the stretch goal if longer filters are needed.
