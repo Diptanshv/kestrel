@@ -15,8 +15,11 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/Diptanshv/kestrel/internal/batch"
 	"github.com/Diptanshv/kestrel/internal/config"
+	"github.com/Diptanshv/kestrel/internal/enrich"
 	"github.com/Diptanshv/kestrel/internal/httpapi"
+	"github.com/Diptanshv/kestrel/internal/sessions"
 	"github.com/Diptanshv/kestrel/internal/store"
 	"github.com/Diptanshv/kestrel/internal/testdb"
 )
@@ -63,7 +66,7 @@ func newTestServer(t *testing.T) (*httptest.Server, *url.URL) {
 	testdb.Reset(t, integrationDB)
 	logger := slog.New(slog.DiscardHandler)
 	q := store.New(integrationDB)
-	srv := httptest.NewServer(httpapi.NewRouter(logger, q, integrationCfg))
+	srv := httptest.NewServer(httpapi.NewRouter(testDeps(logger, q)))
 	base, err := url.Parse(srv.URL)
 	if err != nil {
 		srv.Close()
@@ -71,6 +74,18 @@ func newTestServer(t *testing.T) (*httptest.Server, *url.URL) {
 	}
 	t.Cleanup(srv.Close)
 	return srv, base
+}
+
+// testDeps writes events synchronously so tests can assert on rows straight
+// after a request. The batcher has its own tests in internal/batch.
+func testDeps(logger *slog.Logger, q *store.Queries) httpapi.Deps {
+	return httpapi.Deps{
+		Log:     logger,
+		Queries: q,
+		Config:  integrationCfg,
+		Enrich:  &enrich.Enricher{Salts: enrich.NewSaltStore(q), Geo: &enrich.Geo{}, Sessions: sessions.New()},
+		Sink:    batch.Direct{W: batch.InsertWriter{Q: q}, Log: logger},
+	}
 }
 
 func newAPIClient(t *testing.T, srv *httptest.Server, base *url.URL) *apiClient {

@@ -10,6 +10,177 @@ import (
 	"time"
 )
 
+const statsBreakdownBrowsers = `-- name: StatsBreakdownBrowsers :many
+SELECT
+  coalesce(browser, '')::text            AS value,
+  count(*)::bigint                       AS pageviews,
+  count(DISTINCT visitor_id)::bigint     AS visitors
+FROM events_raw
+WHERE site_id = $1
+  AND ts >= $2
+  AND ts <  $3
+  AND name = 'pageview'
+  AND browser IS NOT NULL AND browser <> ''
+GROUP BY browser
+ORDER BY pageviews DESC, value ASC
+LIMIT $4
+`
+
+type StatsBreakdownBrowsersParams struct {
+	SiteID   int64
+	FromTs   time.Time
+	ToTs     time.Time
+	RowLimit int32
+}
+
+type StatsBreakdownBrowsersRow struct {
+	Value     string
+	Pageviews int64
+	Visitors  int64
+}
+
+func (q *Queries) StatsBreakdownBrowsers(ctx context.Context, arg StatsBreakdownBrowsersParams) ([]StatsBreakdownBrowsersRow, error) {
+	rows, err := q.db.QueryContext(ctx, statsBreakdownBrowsers,
+		arg.SiteID,
+		arg.FromTs,
+		arg.ToTs,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []StatsBreakdownBrowsersRow
+	for rows.Next() {
+		var i StatsBreakdownBrowsersRow
+		if err := rows.Scan(&i.Value, &i.Pageviews, &i.Visitors); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const statsBreakdownCountries = `-- name: StatsBreakdownCountries :many
+SELECT
+  coalesce(country, '')::text            AS value,
+  count(*)::bigint                       AS pageviews,
+  count(DISTINCT visitor_id)::bigint     AS visitors
+FROM events_raw
+WHERE site_id = $1
+  AND ts >= $2
+  AND ts <  $3
+  AND name = 'pageview'
+  AND country IS NOT NULL
+GROUP BY country
+ORDER BY pageviews DESC, value ASC
+LIMIT $4
+`
+
+type StatsBreakdownCountriesParams struct {
+	SiteID   int64
+	FromTs   time.Time
+	ToTs     time.Time
+	RowLimit int32
+}
+
+type StatsBreakdownCountriesRow struct {
+	Value     string
+	Pageviews int64
+	Visitors  int64
+}
+
+func (q *Queries) StatsBreakdownCountries(ctx context.Context, arg StatsBreakdownCountriesParams) ([]StatsBreakdownCountriesRow, error) {
+	rows, err := q.db.QueryContext(ctx, statsBreakdownCountries,
+		arg.SiteID,
+		arg.FromTs,
+		arg.ToTs,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []StatsBreakdownCountriesRow
+	for rows.Next() {
+		var i StatsBreakdownCountriesRow
+		if err := rows.Scan(&i.Value, &i.Pageviews, &i.Visitors); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const statsBreakdownDevices = `-- name: StatsBreakdownDevices :many
+SELECT
+  coalesce(device, '')::text             AS value,
+  count(*)::bigint                       AS pageviews,
+  count(DISTINCT visitor_id)::bigint     AS visitors
+FROM events_raw
+WHERE site_id = $1
+  AND ts >= $2
+  AND ts <  $3
+  AND name = 'pageview'
+  AND device IS NOT NULL AND device <> ''
+GROUP BY device
+ORDER BY pageviews DESC, value ASC
+LIMIT $4
+`
+
+type StatsBreakdownDevicesParams struct {
+	SiteID   int64
+	FromTs   time.Time
+	ToTs     time.Time
+	RowLimit int32
+}
+
+type StatsBreakdownDevicesRow struct {
+	Value     string
+	Pageviews int64
+	Visitors  int64
+}
+
+func (q *Queries) StatsBreakdownDevices(ctx context.Context, arg StatsBreakdownDevicesParams) ([]StatsBreakdownDevicesRow, error) {
+	rows, err := q.db.QueryContext(ctx, statsBreakdownDevices,
+		arg.SiteID,
+		arg.FromTs,
+		arg.ToTs,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []StatsBreakdownDevicesRow
+	for rows.Next() {
+		var i StatsBreakdownDevicesRow
+		if err := rows.Scan(&i.Value, &i.Pageviews, &i.Visitors); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const statsBreakdownEvents = `-- name: StatsBreakdownEvents :many
 SELECT
   name                                   AS value,
@@ -52,6 +223,63 @@ func (q *Queries) StatsBreakdownEvents(ctx context.Context, arg StatsBreakdownEv
 	var items []StatsBreakdownEventsRow
 	for rows.Next() {
 		var i StatsBreakdownEventsRow
+		if err := rows.Scan(&i.Value, &i.Pageviews, &i.Visitors); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const statsBreakdownOS = `-- name: StatsBreakdownOS :many
+SELECT
+  coalesce(os, '')::text                 AS value,
+  count(*)::bigint                       AS pageviews,
+  count(DISTINCT visitor_id)::bigint     AS visitors
+FROM events_raw
+WHERE site_id = $1
+  AND ts >= $2
+  AND ts <  $3
+  AND name = 'pageview'
+  AND os IS NOT NULL AND os <> ''
+GROUP BY os
+ORDER BY pageviews DESC, value ASC
+LIMIT $4
+`
+
+type StatsBreakdownOSParams struct {
+	SiteID   int64
+	FromTs   time.Time
+	ToTs     time.Time
+	RowLimit int32
+}
+
+type StatsBreakdownOSRow struct {
+	Value     string
+	Pageviews int64
+	Visitors  int64
+}
+
+func (q *Queries) StatsBreakdownOS(ctx context.Context, arg StatsBreakdownOSParams) ([]StatsBreakdownOSRow, error) {
+	rows, err := q.db.QueryContext(ctx, statsBreakdownOS,
+		arg.SiteID,
+		arg.FromTs,
+		arg.ToTs,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []StatsBreakdownOSRow
+	for rows.Next() {
+		var i StatsBreakdownOSRow
 		if err := rows.Scan(&i.Value, &i.Pageviews, &i.Visitors); err != nil {
 			return nil, err
 		}
@@ -177,6 +405,48 @@ func (q *Queries) StatsBreakdownReferrers(ctx context.Context, arg StatsBreakdow
 		return nil, err
 	}
 	return items, nil
+}
+
+const statsSessions = `-- name: StatsSessions :one
+WITH s AS (
+  SELECT
+    count(*) FILTER (WHERE name = 'pageview')  AS pageviews,
+    count(*) FILTER (WHERE name <> 'pageview') AS custom,
+    extract(epoch FROM max(ts) - min(ts))      AS duration
+  FROM events_raw
+  WHERE site_id = $1
+    AND ts >= $2
+    AND ts <  $3
+    AND session_id <> 0
+  GROUP BY session_id
+)
+SELECT
+  count(*)::bigint                                              AS visits,
+  count(*) FILTER (WHERE pageviews = 1 AND custom = 0)::bigint AS bounces,
+  coalesce(sum(duration), 0)::bigint                            AS duration_sum
+FROM s
+`
+
+type StatsSessionsParams struct {
+	SiteID int64
+	FromTs time.Time
+	ToTs   time.Time
+}
+
+type StatsSessionsRow struct {
+	Visits      int64
+	Bounces     int64
+	DurationSum int64
+}
+
+// A visit is one session_id. Bounce: exactly one pageview and no custom event.
+// Duration: last event minus first, so a bounce contributes 0 seconds.
+// session_id 0 marks rows written before sessions existed; they are skipped.
+func (q *Queries) StatsSessions(ctx context.Context, arg StatsSessionsParams) (StatsSessionsRow, error) {
+	row := q.db.QueryRowContext(ctx, statsSessions, arg.SiteID, arg.FromTs, arg.ToTs)
+	var i StatsSessionsRow
+	err := row.Scan(&i.Visits, &i.Bounces, &i.DurationSum)
+	return i, err
 }
 
 const statsSummary = `-- name: StatsSummary :one

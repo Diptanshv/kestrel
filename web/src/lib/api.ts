@@ -49,7 +49,17 @@ export const api = {
 
 export type User = { id: number; email: string; created_at: string }
 export type Site = { id: number; domain: string; public_slug: string | null; created_at: string }
-export type Summary = { from: string; to: string; pageviews: number; visitors: number }
+export type Summary = {
+  from: string
+  to: string
+  pageviews: number
+  visitors: number
+  visits: number
+  /** Percentage, 0..100. */
+  bounce_rate: number
+  /** Mean visit length in seconds. */
+  visit_duration: number
+}
 export type TimeseriesPoint = { bucket: string; pageviews: number; visitors: number }
 export type Timeseries = { interval: string; points: TimeseriesPoint[] }
 export type BreakdownRow = { value: string; pageviews: number; visitors: number }

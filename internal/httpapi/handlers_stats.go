@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -13,6 +14,11 @@ type summaryResponse struct {
 	To        string `json:"to"`
 	Pageviews int64  `json:"pageviews"`
 	Visitors  int64  `json:"visitors"`
+	Visits    int64  `json:"visits"`
+	// BounceRate is a percentage, 0..100, rounded to one decimal.
+	BounceRate float64 `json:"bounce_rate"`
+	// VisitDuration is the mean visit length in whole seconds.
+	VisitDuration int64 `json:"visit_duration"`
 }
 
 type timeseriesPoint struct {
@@ -71,6 +77,10 @@ func (api *API) handleSiteSummary(w http.ResponseWriter, r *http.Request) {
 		To:        rng.To.Format(time.RFC3339),
 		Pageviews: sum.Pageviews,
 		Visitors:  sum.Visitors,
+		Visits:    sum.Visits,
+
+		BounceRate:    math.Round(sum.BounceRate()*1000) / 10,
+		VisitDuration: int64(math.Round(sum.AvgDuration())),
 	})
 }
 
