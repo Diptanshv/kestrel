@@ -82,6 +82,8 @@ func (api *API) handleCreateSite(w http.ResponseWriter, r *http.Request) {
 		_ = writeError(w, http.StatusInternalServerError, "internal_server_error", "failed to create site")
 		return
 	}
+	// Drop any cached "unknown domain" so the tracker works immediately.
+	api.sites.invalidate(site.Domain)
 	_ = writeJSON(w, http.StatusCreated, siteToResponse(site))
 }
 
@@ -157,6 +159,7 @@ func (api *API) handlePatchSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	api.sites.invalidate(site.Domain, updated.Domain)
 	_ = writeJSON(w, http.StatusOK, siteToResponse(updated))
 }
 
@@ -171,6 +174,7 @@ func (api *API) handleDeleteSite(w http.ResponseWriter, r *http.Request) {
 		_ = writeError(w, http.StatusInternalServerError, "internal_server_error", "failed to delete site")
 		return
 	}
+	api.sites.invalidate(site.Domain)
 
 	w.WriteHeader(http.StatusNoContent)
 }

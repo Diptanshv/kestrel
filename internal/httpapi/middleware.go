@@ -3,8 +3,11 @@ package httpapi
 import (
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
+	"github.com/Diptanshv/kestrel/internal/metrics"
+	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
@@ -25,6 +28,26 @@ func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 			)
 		})
 	}
+}
+
+// observeDuration records latency by chi route pattern rather than raw path,
+// so /api/sites/{id}/summary is one series instead of one per site.
+func observeDuration(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+		next.ServeHTTP(ww, r)
+
+		route := "unmatched"
+		if rc := chi.RouteContext(r.Context()); rc != nil {
+			if p := rc.RoutePattern(); p != "" {
+				route = p
+			}
+		}
+		metrics.HTTPDuration.
+			WithLabelValues(r.Method, route, strconv.Itoa(ww.Status())).
+			Observe(time.Since(start).Seconds())
+	})
 }
 
 // allowTrackerCORS echoes the request Origin so the tracker's fetch fallback

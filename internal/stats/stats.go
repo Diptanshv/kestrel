@@ -8,25 +8,32 @@ import (
 	"github.com/Diptanshv/kestrel/internal/store"
 )
 
-// Dimension is a breakdown axis. Phase 5 adds country, browser, os and device
-// once enrichment fills those columns.
+// Dimension is a breakdown axis.
 type Dimension string
 
 const (
 	DimensionPage     Dimension = "page"
 	DimensionReferrer Dimension = "referrer"
 	DimensionEvent    Dimension = "event"
+	DimensionCountry  Dimension = "country"
+	DimensionBrowser  Dimension = "browser"
+	DimensionOS       Dimension = "os"
+	DimensionDevice   Dimension = "device"
 )
 
+var dimensions = map[Dimension]bool{
+	DimensionPage: true, DimensionReferrer: true, DimensionEvent: true,
+	DimensionCountry: true, DimensionBrowser: true, DimensionOS: true, DimensionDevice: true,
+}
+
 func ParseDimension(v string) (Dimension, error) {
-	switch Dimension(v) {
-	case DimensionPage, DimensionReferrer, DimensionEvent:
-		return Dimension(v), nil
-	case "":
+	if v == "" {
 		return "", errors.New("dimension is required")
-	default:
-		return "", errors.New(`dimension must be "page", "referrer" or "event"`)
 	}
+	if !dimensions[Dimension(v)] {
+		return "", errors.New(`dimension must be one of: page, referrer, event, country, browser, os, device`)
+	}
+	return Dimension(v), nil
 }
 
 const (
@@ -50,8 +57,27 @@ func New(q *store.Queries, timezone string) *Service {
 }
 
 type Summary struct {
-	Pageviews int64
-	Visitors  int64
+	Pageviews   int64
+	Visitors    int64
+	Visits      int64
+	Bounces     int64
+	DurationSum int64 // seconds, summed over visits
+}
+
+// BounceRate is the share of visits that bounced, 0..1.
+func (s Summary) BounceRate() float64 {
+	if s.Visits == 0 {
+		return 0
+	}
+	return float64(s.Bounces) / float64(s.Visits)
+}
+
+// AvgDuration is the mean visit length in seconds.
+func (s Summary) AvgDuration() float64 {
+	if s.Visits == 0 {
+		return 0
+	}
+	return float64(s.DurationSum) / float64(s.Visits)
 }
 
 func (s *Service) Summary(ctx context.Context, siteID int64, r Range) (Summary, error) {
@@ -63,7 +89,21 @@ func (s *Service) Summary(ctx context.Context, siteID int64, r Range) (Summary, 
 	if err != nil {
 		return Summary{}, err
 	}
-	return Summary{Pageviews: row.Pageviews, Visitors: row.Visitors}, nil
+	sess, err := s.Q.StatsSessions(ctx, store.StatsSessionsParams{
+		SiteID: siteID,
+		FromTs: r.From,
+		ToTs:   r.To,
+	})
+	if err != nil {
+		return Summary{}, err
+	}
+	return Summary{
+		Pageviews:   row.Pageviews,
+		Visitors:    row.Visitors,
+		Visits:      sess.Visits,
+		Bounces:     sess.Bounces,
+		DurationSum: sess.DurationSum,
+	}, nil
 }
 
 type Point struct {
@@ -116,10 +156,7 @@ func (s *Service) Breakdown(ctx context.Context, siteID int64, r Range, dim Dime
 	switch dim {
 	case DimensionPage:
 		rows, err := s.Q.StatsBreakdownPages(ctx, store.StatsBreakdownPagesParams{
-			SiteID:   siteID,
-			FromTs:   r.From,
-			ToTs:     r.To,
-			RowLimit: limit,
+			SiteID: siteID, FromTs: r.From, ToTs: r.To, RowLimit: limit,
 		})
 		if err != nil {
 			return nil, err
@@ -131,13 +168,8 @@ func (s *Service) Breakdown(ctx context.Context, siteID int64, r Range, dim Dime
 		return out, nil
 
 	case DimensionEvent:
-		// Custom events only: 'pageview' is excluded by the query, so this
-		// counts goal completions rather than page loads.
 		rows, err := s.Q.StatsBreakdownEvents(ctx, store.StatsBreakdownEventsParams{
-			SiteID:   siteID,
-			FromTs:   r.From,
-			ToTs:     r.To,
-			RowLimit: limit,
+			SiteID: siteID, FromTs: r.From, ToTs: r.To, RowLimit: limit,
 		})
 		if err != nil {
 			return nil, err
@@ -150,10 +182,59 @@ func (s *Service) Breakdown(ctx context.Context, siteID int64, r Range, dim Dime
 
 	case DimensionReferrer:
 		rows, err := s.Q.StatsBreakdownReferrers(ctx, store.StatsBreakdownReferrersParams{
-			SiteID:   siteID,
-			FromTs:   r.From,
-			ToTs:     r.To,
-			RowLimit: limit,
+			SiteID: siteID, FromTs: r.From, ToTs: r.To, RowLimit: limit,
+		})
+		if err != nil {
+			return nil, err
+		}
+		out := make([]BreakdownRow, 0, len(rows))
+		for _, row := range rows {
+			out = append(out, BreakdownRow{Value: row.Value, Pageviews: row.Pageviews, Visitors: row.Visitors})
+		}
+		return out, nil
+
+	case DimensionCountry:
+		rows, err := s.Q.StatsBreakdownCountries(ctx, store.StatsBreakdownCountriesParams{
+			SiteID: siteID, FromTs: r.From, ToTs: r.To, RowLimit: limit,
+		})
+		if err != nil {
+			return nil, err
+		}
+		out := make([]BreakdownRow, 0, len(rows))
+		for _, row := range rows {
+			out = append(out, BreakdownRow{Value: row.Value, Pageviews: row.Pageviews, Visitors: row.Visitors})
+		}
+		return out, nil
+
+	case DimensionBrowser:
+		rows, err := s.Q.StatsBreakdownBrowsers(ctx, store.StatsBreakdownBrowsersParams{
+			SiteID: siteID, FromTs: r.From, ToTs: r.To, RowLimit: limit,
+		})
+		if err != nil {
+			return nil, err
+		}
+		out := make([]BreakdownRow, 0, len(rows))
+		for _, row := range rows {
+			out = append(out, BreakdownRow{Value: row.Value, Pageviews: row.Pageviews, Visitors: row.Visitors})
+		}
+		return out, nil
+
+	case DimensionOS:
+		rows, err := s.Q.StatsBreakdownOS(ctx, store.StatsBreakdownOSParams{
+			SiteID: siteID, FromTs: r.From, ToTs: r.To, RowLimit: limit,
+		})
+		if err != nil {
+			return nil, err
+		}
+		out := make([]BreakdownRow, 0, len(rows))
+		for _, row := range rows {
+			out = append(out, BreakdownRow{Value: row.Value, Pageviews: row.Pageviews, Visitors: row.Visitors})
+		}
+		return out, nil
+
+	case DimensionDevice:
+		rows, err := s.Q.StatsBreakdownDevices(ctx, store.StatsBreakdownDevicesParams{
+			SiteID: siteID, FromTs: r.From, ToTs: r.To, RowLimit: limit,
 		})
 		if err != nil {
 			return nil, err

@@ -3,11 +3,12 @@ import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api, type Breakdown, type Site, type Summary, type Timeseries } from '../lib/api'
 import { RANGES, isRangeKey, rangeParams, type RangeKey } from '../lib/range'
-import { bucketLabel } from '../lib/format'
+import { bucketLabel, duration, percent } from '../lib/format'
 import { Shell } from '../components/Shell'
 import { StatTile } from '../components/StatTile'
 import { TrafficChart, type ChartDatum } from '../components/TrafficChart'
 import { BreakdownCard } from '../components/BreakdownCard'
+import { TabbedBreakdown } from '../components/TabbedBreakdown'
 import { ErrorNote, Skeleton, WaitingForData } from '../components/ui'
 
 function RangePicker({ value, onChange }: { value: RangeKey; onChange: (k: RangeKey) => void }) {
@@ -124,9 +125,29 @@ export default function Dashboard() {
         <WaitingForData domain={site.data.domain} />
       ) : (
         <>
-          <div className="mb-4 grid grid-cols-2 gap-4">
+          <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-5">
             <StatTile label="Unique visitors" value={summary.data?.visitors} series="visitors" loading={firstLoad} />
             <StatTile label="Pageviews" value={summary.data?.pageviews} series="pageviews" loading={firstLoad} />
+            <StatTile
+              label="Visits"
+              value={summary.data?.visits}
+              loading={firstLoad}
+              hint="A visit ends after 30 minutes without activity, or at midnight UTC."
+            />
+            <StatTile
+              label="Bounce rate"
+              value={summary.data?.bounce_rate}
+              loading={firstLoad}
+              format={percent}
+              hint="Visits with a single pageview and no custom event."
+            />
+            <StatTile
+              label="Visit duration"
+              value={summary.data?.visit_duration}
+              loading={firstLoad}
+              format={duration}
+              hint="Average time from a visit's first event to its last. Bounces count as 0s."
+            />
           </div>
 
           <div className="mb-4">
@@ -156,6 +177,29 @@ export default function Dashboard() {
             />
           </div>
 
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <TabbedBreakdown
+              base={base}
+              params={params}
+              queryKey={['breakdown', id, range]}
+              title="Audience"
+              tabs={[
+                { dimension: 'country', label: 'Countries', valueLabel: 'Country', emptyLabel: 'No country data in this range.' },
+                { dimension: 'device', label: 'Devices', valueLabel: 'Device', emptyLabel: 'No device data in this range.' },
+              ]}
+            />
+            <TabbedBreakdown
+              base={base}
+              params={params}
+              queryKey={['breakdown', id, range]}
+              title="Technology"
+              tabs={[
+                { dimension: 'browser', label: 'Browsers', valueLabel: 'Browser', emptyLabel: 'No browser data in this range.' },
+                { dimension: 'os', label: 'Operating systems', valueLabel: 'OS', emptyLabel: 'No OS data in this range.' },
+              ]}
+            />
+          </div>
+
           <div className="mt-4">
             <BreakdownCard
               title="Custom events"
@@ -170,8 +214,10 @@ export default function Dashboard() {
 
           <p className="mt-6 text-xs leading-relaxed text-zinc-500">
             Visitors and pageviews count page loads only; custom events are listed separately.
-            Times are IST (UTC+5:30). Bounce rate and visit duration need session tracking; countries,
-            browsers and devices need enrichment.
+            Times are IST (UTC+5:30). Unique visitors are counted per day and summed, so someone
+            visiting on two days counts twice — that is the cost of not using cookies.
+            A visit ends after 30 minutes of inactivity; a bounce is a visit with one pageview
+            and no custom event.
           </p>
         </>
       )}

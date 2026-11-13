@@ -12,8 +12,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Diptanshv/kestrel/internal/batch"
 	"github.com/Diptanshv/kestrel/internal/config"
+	"github.com/Diptanshv/kestrel/internal/enrich"
 	"github.com/Diptanshv/kestrel/internal/httpapi"
+	"github.com/Diptanshv/kestrel/internal/sessions"
 	"github.com/Diptanshv/kestrel/internal/store"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
@@ -61,9 +64,38 @@ func main() {
 
 	queries := store.New(db)
 
+	geo, err := enrich.OpenGeo(cfg.GeoIPDBPath)
+	if err != nil {
+		logger.Error("geoip open failed", "path", cfg.GeoIPDBPath, "err", err)
+		os.Exit(1)
+	}
+	defer func() { _ = geo.Close() }()
+	if cfg.GeoIPDBPath == "" {
+		logger.Warn("geoip disabled; country will be empty", "hint", "set GEOIP_DB_PATH")
+	}
+
+	enricher := enrich.New(enrich.NewSaltStore(queries), geo)
+	enricher.Sessions = sessions.New()
+	bgCtx, stopBackground := context.WithCancel(context.Background())
+	defer stopBackground()
+	go enricher.Sessions.Run(bgCtx, time.Minute)
+
+	batcher := batch.New(batch.CopyWriter{DB: db}, logger, batch.Config{
+		BufferSize:    cfg.IngestBufferSize,
+		BatchSize:     cfg.IngestBatchSize,
+		FlushInterval: cfg.IngestFlushInterval,
+	})
+	batcher.Start()
+
 	srv := &http.Server{
-		Addr:         ":" + cfg.Port,
-		Handler:      httpapi.NewRouter(logger, queries, cfg),
+		Addr: ":" + cfg.Port,
+		Handler: httpapi.NewRouter(httpapi.Deps{
+			Log:     logger,
+			Queries: queries,
+			Config:  cfg,
+			Enrich:  enricher,
+			Sink:    batcher,
+		}),
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -84,8 +116,13 @@ func main() {
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer shutdownCancel()
+	// Order matters: stop the HTTP server first so no handler is still
+	// enqueueing, then drain the buffer into Postgres.
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("graceful shutdown failed", "err", err)
+	}
+	if err := batcher.Close(shutdownCtx); err != nil {
+		logger.Error("batcher drain failed", "err", err, "pending", batcher.Depth())
 		os.Exit(1)
 	}
 	logger.Info("server stopped")
