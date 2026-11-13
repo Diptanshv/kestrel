@@ -20,6 +20,10 @@ type Config struct {
 	// UTC one. IANA name; "UTC" restores the original behaviour.
 	Timezone   string
 	EnableDemo bool
+
+	// GeoIPDBPath points at a MaxMind-format country database. Empty disables
+	// country lookup rather than failing - local dev should not need a 4 MB blob.
+	GeoIPDBPath string
 }
 
 func Load() (Config, error) {
@@ -32,6 +36,7 @@ func Load() (Config, error) {
 		SessionTTL:     envOrDuration("SESSION_TTL", 30*24*time.Hour),
 		Timezone:       envOr("TIMEZONE", "Asia/Kolkata"),
 		EnableDemo:     envOr("ENABLE_DEMO", "false") == "true",
+		GeoIPDBPath:    os.Getenv("GEOIP_DB_PATH"),
 	}
 	if c.DatabaseURL == "" {
 		return c, fmt.Errorf("DATABASE_URL is required")
