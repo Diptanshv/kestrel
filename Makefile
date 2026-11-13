@@ -5,7 +5,7 @@
 TEST_DATABASE_URL ?= postgres://pulse:pulse@127.0.0.1:5433/pulse_test?sslmode=disable
 
 up:
-	docker compose up -d
+	docker compose up -d db
 
 down:
 	docker compose down

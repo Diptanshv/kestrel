@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"log/slog"
 	"net/http"
@@ -24,6 +26,7 @@ import (
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers "pgx" driver for database/sql
+	_ "time/tzdata"                    // the distroless image has no zoneinfo; TIMEZONE must still resolve
 )
 
 const shutdownTimeout = 10 * time.Second
@@ -67,12 +70,18 @@ func main() {
 	queries := store.New(db)
 
 	geo, err := enrich.OpenGeo(cfg.GeoIPDBPath)
-	if err != nil {
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		// The container image sets the path but the build may have failed
+		// to fetch the file; run without countries rather than not at all.
+		logger.Warn("geoip database missing; country will be empty", "path", cfg.GeoIPDBPath)
+		geo, cfg.GeoIPDBPath = &enrich.Geo{}, ""
+	case err != nil:
 		logger.Error("geoip open failed", "path", cfg.GeoIPDBPath, "err", err)
 		os.Exit(1)
 	}
 	defer func() { _ = geo.Close() }()
-	if cfg.GeoIPDBPath == "" {
+	if cfg.GeoIPDBPath == "" && err == nil {
 		logger.Warn("geoip disabled; country will be empty", "hint", "set GEOIP_DB_PATH")
 	}
 
